@@ -1,5 +1,11 @@
 # cuberun
 
+[![CI](https://github.com/vabhzw17eg2qu4m9-bit/cuberun/actions/workflows/ci.yml/badge.svg)](https://github.com/vabhzw17eg2qu4m9-bit/cuberun/actions/workflows/ci.yml)
+[![release](https://img.shields.io/github/v/release/vabhzw17eg2qu4m9-bit/cuberun)](https://github.com/vabhzw17eg2qu4m9-bit/cuberun/releases/latest)
+![tests](.badges/tests.svg)
+![coverage](.badges/coverage.svg)
+![crap4dart](.badges/crap4dart.svg)
+
 **Every launch of a supported AI harness on this machine (pi / omp / fa)
 becomes kernel-confined by default.**
 
