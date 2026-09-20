@@ -134,7 +134,9 @@ final class HarnessRuntime {
 String runtimePrefix(String binDir) {
   final parts = binDir.split('/');
   if (parts.isNotEmpty && parts.last == 'bin') {
-    return parts.length <= 2 ? '/' : parts.sublist(0, parts.length - 1).join('/');
+    return parts.length <= 2
+        ? '/'
+        : parts.sublist(0, parts.length - 1).join('/');
   }
   return binDir;
 }
@@ -185,7 +187,10 @@ HarnessRuntime _resolve(
   if (envName != null) {
     final v = env[envName];
     if (v != null && v.trim().isNotEmpty) {
-      agentRoot = sanitizeManifestPath(expandTilde(v.trim(), home), 'env($envName)');
+      agentRoot = sanitizeManifestPath(
+        expandTilde(v.trim(), home),
+        'env($envName)',
+      );
     }
   }
   if (spec.widenToDotParent) {
@@ -195,11 +200,7 @@ HarnessRuntime _resolve(
   // --- declarative grants (manifest) + ungrantable check (E10).
   final manifestRead = [for (final p in spec.extraRead) expandTilde(p, home)];
   final manifestWrite = [for (final p in spec.extraWrite) expandTilde(p, home)];
-  final declarative = <String>[
-    agentRoot,
-    ...manifestRead,
-    ...manifestWrite,
-  ];
+  final declarative = <String>[agentRoot, ...manifestRead, ...manifestWrite];
   final violations = ungrantableViolations(declarative, home);
   if (violations.isNotEmpty) {
     throw ConfigException(
@@ -212,10 +213,10 @@ HarnessRuntime _resolve(
   // --- service grants (fail-closed on unknown; catalog order for text
   //     determinism regardless of flag order — E9).
   final grants = resolveServiceGrants(services, home: home);
-  final grantViolations = ungrantableViolations(
-    [...grants.read, ...grants.write],
-    home,
-  );
+  final grantViolations = ungrantableViolations([
+    ...grants.read,
+    ...grants.write,
+  ], home);
   if (grantViolations.isNotEmpty) {
     // Impossible with the shipped catalog — a bug, not a config issue.
     throw ConfigException(
@@ -307,7 +308,9 @@ List<String> _runtimeDirsFor(
     final path = env['PATH'] ?? '';
     for (final dir in path.split(':')) {
       if (dir.trim().isEmpty) continue;
-      final candidate = dir.startsWith('/') ? '$dir/$argv0' : '$cwd/$dir/$argv0';
+      final candidate = dir.startsWith('/')
+          ? '$dir/$argv0'
+          : '$cwd/$dir/$argv0';
       if (io.isExecutable(candidate)) return _dirname(candidate);
     }
     return null;
@@ -328,9 +331,7 @@ List<String> _runtimeDirsFor(
       if (interpDir == null) break;
       addPrefix(interpDir);
       interp = io.shebangInterpreter(
-        interp.contains('/')
-            ? interp
-            : '$interpDir/$interp',
+        interp.contains('/') ? interp : '$interpDir/$interp',
       );
       level++;
     }
@@ -343,4 +344,3 @@ String _dirname(String p) {
   if (i <= 0) return '/';
   return p.substring(0, i);
 }
-

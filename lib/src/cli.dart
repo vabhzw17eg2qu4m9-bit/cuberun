@@ -20,7 +20,8 @@ import 'stage.dart';
 /// cuberun version (kept in one place for `--version` and CI smoke).
 const String kCuberunVersion = '0.1.0';
 
-const String _usage = '''
+const String _usage =
+    '''
 cuberun $kCuberunVersion — kernel-confined launcher for AI harnesses
 
 Usage:
@@ -48,7 +49,10 @@ Exit codes: 0 ok · 1 probe failed · 2 config error · 64 usage ·
 (signal n => 128+n).''';
 
 /// Parses [args], runs the verb, returns the process exit code.
-Future<int> runCli(List<String> args, {void Function(String)? stdoutSink}) async {
+Future<int> runCli(
+  List<String> args, {
+  void Function(String)? stdoutSink,
+}) async {
   void out(String s) => (stdoutSink ?? io.stdout.writeln)(s);
   void err(String s) => io.stderr.writeln(s);
 
@@ -154,8 +158,10 @@ _Opts _scanOpts(List<String> args, Set<String> valueFlags) {
   }
   final cwd = io.Directory.current.path;
   final home = io.Platform.environment['HOME'] ?? '/';
-  final resolved = HarnessResolver(cwd: cwd, home: home)
-      .resolve(opts.positional.first, file: opts.file);
+  final resolved = HarnessResolver(
+    cwd: cwd,
+    home: home,
+  ).resolve(opts.positional.first, file: opts.file);
   final runtime = resolveRuntime(
     resolved.spec,
     services: opts.services,
@@ -183,8 +189,10 @@ Future<int> _cmdRun(List<String> args, void Function(String) err) async {
 
   final check = await preflightBackend();
   if (!check.ok) {
-    err('cuberun: kernel backend unavailable: ${check.detail} '
-        '(fail closed; nothing ran)');
+    err(
+      'cuberun: kernel backend unavailable: ${check.detail} '
+      '(fail closed; nothing ran)',
+    );
     return 126;
   }
 
@@ -221,7 +229,11 @@ int _cmdList(void Function(String) out) {
   return 0;
 }
 
-int _cmdShow(List<String> args, void Function(String) out, void Function(String) err) {
+int _cmdShow(
+  List<String> args,
+  void Function(String) out,
+  void Function(String) err,
+) {
   final opts = _scanOpts(args, const {});
   final r = _resolveForRun(opts, 'show');
   final runtime = r.runtime;
@@ -230,7 +242,11 @@ int _cmdShow(List<String> args, void Function(String) out, void Function(String)
   return 0;
 }
 
-int _cmdSbpl(List<String> args, void Function(String) out, void Function(String) err) {
+int _cmdSbpl(
+  List<String> args,
+  void Function(String) out,
+  void Function(String) err,
+) {
   final opts = _scanOpts(args, const {});
   final r = _resolveForRun(opts, 'sbpl');
   _printWarnings(r.runtime, err);
@@ -238,7 +254,11 @@ int _cmdSbpl(List<String> args, void Function(String) out, void Function(String)
   return 0;
 }
 
-int _cmdNew(List<String> args, void Function(String) out, void Function(String) err) {
+int _cmdNew(
+  List<String> args,
+  void Function(String) out,
+  void Function(String) err,
+) {
   final opts = _scanOpts(args, const {'command', 'agent-root'});
   if (opts.positional.length != 1) {
     throw const ConfigException('new <name>: exactly one name required');
@@ -272,8 +292,10 @@ Future<int> _cmdProbe(
 
   final check = await preflightBackend();
   if (!check.ok) {
-    err('cuberun: kernel backend unavailable: ${check.detail} '
-        '(fail closed; nothing ran)');
+    err(
+      'cuberun: kernel backend unavailable: ${check.detail} '
+      '(fail closed; nothing ran)',
+    );
     return 126;
   }
 
@@ -296,8 +318,10 @@ Future<int> _cmdProbe(
       out('FAIL  ${c.name}${c.info.isEmpty ? '' : ' — ${c.info}'}');
     }
   }
-  out('\nprobe: ${report.checks.length - report.failed} passed, '
-      '${report.failed} failed');
+  out(
+    '\nprobe: ${report.checks.length - report.failed} passed, '
+    '${report.failed} failed',
+  );
   return report.allPassed ? 0 : 1;
 }
 
@@ -311,8 +335,10 @@ void _banner(
   final src = resolved.source == HarnessSource.preset
       ? 'preset'
       : '${resolved.source.label} (${resolved.path})';
-  sink('⛨ ${resolved.spec.name} under cube-harness sandbox '
-      '(profile $key10${profilePath == null ? '' : ': $profilePath'})');
+  sink(
+    '⛨ ${resolved.spec.name} under cube-harness sandbox '
+    '(profile $key10${profilePath == null ? '' : ': $profilePath'})',
+  );
   sink('   source : $src');
   sink(
     '   rw     : ${runtime.projDir} · ${runtime.agentRoot} · ${runtime.tmp}'

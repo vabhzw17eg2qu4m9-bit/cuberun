@@ -29,10 +29,8 @@ final class CommandOutcome {
 }
 
 /// Injectable command execution (tests fake the backend).
-typedef CommandRunner = Future<CommandOutcome> Function(
-  String exe,
-  List<String> args,
-);
+typedef CommandRunner =
+    Future<CommandOutcome> Function(String exe, List<String> args);
 
 /// dart:io-backed runner: spawns, captures both pipes, never inherits.
 Future<CommandOutcome> processRunner(String exe, List<String> args) async {
@@ -88,17 +86,19 @@ Future<BackendCheck> preflightBackend({
   if (sandboxExec == null) {
     return BackendCheck(ok: false, detail: 'sandbox-exec not found on PATH');
   }
-  final probe = await runner(
-    sandboxExec,
-    ['-p', '(version 1)(allow default)', '/usr/bin/true'],
-  );
+  final probe = await runner(sandboxExec, [
+    '-p',
+    '(version 1)(allow default)',
+    '/usr/bin/true',
+  ]);
   if (probe.launchFailed) {
     return BackendCheck(ok: false, detail: 'sandbox-exec probe could not run');
   }
   if (probe.exitCode != 0) {
     return BackendCheck(
       ok: false,
-      detail: 'sandbox-exec probe exited ${probe.exitCode}: '
+      detail:
+          'sandbox-exec probe exited ${probe.exitCode}: '
           '${probe.stderr.trim().split('\n').take(3).join(' | ')}',
     );
   }

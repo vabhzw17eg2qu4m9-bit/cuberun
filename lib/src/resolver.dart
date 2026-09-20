@@ -47,7 +47,11 @@ final class ResolvedHarness {
 /// One `cuberun list` row.
 final class ProfileListing {
   /// Creates a row.
-  const ProfileListing({required this.stem, required this.source, required this.description});
+  const ProfileListing({
+    required this.stem,
+    required this.source,
+    required this.description,
+  });
 
   /// The name resolution keys on (filename stem or preset id).
   final String stem;
@@ -133,11 +137,13 @@ final class HarnessResolver {
     ];
     void scan(String dirPath, HarnessSource source) {
       for (final e in _scan(dirPath)) {
-        out.add(ProfileListing(
-          stem: e.stem,
-          source: source,
-          description: e.description,
-        ));
+        out.add(
+          ProfileListing(
+            stem: e.stem,
+            source: source,
+            description: e.description,
+          ),
+        );
       }
     }
 

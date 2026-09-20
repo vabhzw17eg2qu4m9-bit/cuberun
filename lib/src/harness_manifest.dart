@@ -95,7 +95,10 @@ final class HarnessSpec {
 
   /// Parses manifest yaml TEXT (used by presets, resolver and scaffold
   /// round-trips). [sourcePath] names the document in error messages.
-  static HarnessSpec fromYamlText(String text, {String sourcePath = 'manifest'}) {
+  static HarnessSpec fromYamlText(
+    String text, {
+    String sourcePath = 'manifest',
+  }) {
     final Object? node = loadYaml(text);
     return HarnessSpec.fromYaml(node, sourcePath: sourcePath);
   }
@@ -107,11 +110,18 @@ final class HarnessSpec {
         '$sourcePath: must be a yaml map, got ${node.runtimeType}',
       );
     }
-    _checkKeys(node, const {'apiVersion', 'kind', 'metadata', 'spec'}, sourcePath);
+    _checkKeys(node, const {
+      'apiVersion',
+      'kind',
+      'metadata',
+      'spec',
+    }, sourcePath);
 
     final api = node['apiVersion'];
     if (api == null) {
-      throw ConfigException('$sourcePath.apiVersion: required (expected "cuberun/v1")');
+      throw ConfigException(
+        '$sourcePath.apiVersion: required (expected "cuberun/v1")',
+      );
     }
     if (api is! String || api != 'cuberun/v1') {
       throw ConfigException(
@@ -157,19 +167,15 @@ final class HarnessSpec {
         '$sourcePath.spec: must be a yaml map, got ${spec.runtimeType}',
       );
     }
-    _checkKeys(
-      spec,
-      const {
-        'command',
-        'agentRoot',
-        'agentRootEnv',
-        'widenToDotParent',
-        'extraRead',
-        'extraWrite',
-        'network',
-      },
-      '$sourcePath.spec',
-    );
+    _checkKeys(spec, const {
+      'command',
+      'agentRoot',
+      'agentRootEnv',
+      'widenToDotParent',
+      'extraRead',
+      'extraWrite',
+      'network',
+    }, '$sourcePath.spec');
 
     // command: string or argv list, required non-empty (AC1).
     final List<String> command;
@@ -226,9 +232,18 @@ final class HarnessSpec {
       agentRoot: agentRoot,
       agentRootEnv: agentRootEnvNode as String?,
       widenToDotParent: widenNode as bool? ?? false,
-      extraRead: _sanitizePathList(spec['extraRead'], '$sourcePath.spec.extraRead'),
-      extraWrite: _sanitizePathList(spec['extraWrite'], '$sourcePath.spec.extraWrite'),
-      network: HarnessNetwork.parse(spec['network'], '$sourcePath.spec.network'),
+      extraRead: _sanitizePathList(
+        spec['extraRead'],
+        '$sourcePath.spec.extraRead',
+      ),
+      extraWrite: _sanitizePathList(
+        spec['extraWrite'],
+        '$sourcePath.spec.extraWrite',
+      ),
+      network: HarnessNetwork.parse(
+        spec['network'],
+        '$sourcePath.spec.network',
+      ),
     );
   }
 
@@ -236,7 +251,9 @@ final class HarnessSpec {
   /// `cuberun new`; the output must round-trip through [fromYamlText]).
   String toYamlText() {
     final b = StringBuffer();
-    b.writeln('# cuberun harness manifest — strict schema (apiVersion cuberun/v1)');
+    b.writeln(
+      '# cuberun harness manifest — strict schema (apiVersion cuberun/v1)',
+    );
     b.writeln('apiVersion: cuberun/v1');
     b.writeln('kind: Harness');
     b.writeln('metadata:');
@@ -286,7 +303,9 @@ final class HarnessSpec {
   static List<String> _sanitizePathList(Object? node, String where) {
     if (node == null) return const [];
     if (node is! YamlList) {
-      throw ConfigException('$where: must be a list of paths, got ${node.runtimeType}');
+      throw ConfigException(
+        '$where: must be a list of paths, got ${node.runtimeType}',
+      );
     }
     return [
       for (var i = 0; i < node.length; i++)

@@ -69,7 +69,9 @@ int _compare(_Rule a, _Rule b) {
 }
 
 String _emit(_Rule r, String op) {
-  if (r.kind == _Kind.bare) return '(${r.verb.name} ${r.metadata ? 'file-read-metadata' : op})';
+  if (r.kind == _Kind.bare) {
+    return '(${r.verb.name} ${r.metadata ? 'file-read-metadata' : op})';
+  }
   final arg = r.kind == _Kind.literal
       ? '(literal "${r.path}")'
       : '(subpath "${r.path}")';
@@ -90,11 +92,7 @@ final class SbplProfile {
 
 /// Emits the deterministic SBPL profile for [runtime].
 SbplProfile emitProfile(HarnessRuntime runtime) {
-  final lines = <String>[
-    '(version 1)',
-    '(allow default)',
-    '(allow network*)',
-  ];
+  final lines = <String>['(version 1)', '(allow default)', '(allow network*)'];
 
   // --- writes: bare deny, then explicit allows.
   final writes = <_Rule>[
@@ -145,6 +143,9 @@ SbplProfile emitProfile(HarnessRuntime runtime) {
   }
 
   final text = '${lines.join('\n')}\n';
-  final key10 = md5.convert(convert.utf8.encode(text)).toString().substring(0, 10);
+  final key10 = md5
+      .convert(convert.utf8.encode(text))
+      .toString()
+      .substring(0, 10);
   return SbplProfile(text: text, key10: key10);
 }

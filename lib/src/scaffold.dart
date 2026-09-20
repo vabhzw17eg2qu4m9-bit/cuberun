@@ -32,7 +32,10 @@ String scaffoldProfile({
   final spec = HarnessSpec(name: name, command: [command], agentRoot: root);
   final text = spec.toYamlText();
   // Round-trip proof: the scaffold MUST parse through the strict parser.
-  final reparsed = HarnessSpec.fromYamlText(text, sourcePath: '<scaffold:$name>');
+  final reparsed = HarnessSpec.fromYamlText(
+    text,
+    sourcePath: '<scaffold:$name>',
+  );
   if (reparsed.command.join(' ') != command || reparsed.agentRoot != root) {
     throw ConfigException('scaffold round-trip mismatch (bug)');
   }
@@ -41,7 +44,9 @@ String scaffoldProfile({
   dir.createSync(recursive: true);
   final file = io.File('${dir.path}/$name.yaml');
   if (file.existsSync()) {
-    throw ConfigException('${file.path}: already exists (refusing to overwrite)');
+    throw ConfigException(
+      '${file.path}: already exists (refusing to overwrite)',
+    );
   }
   file.writeAsStringSync(text);
   return file.path;

@@ -18,7 +18,12 @@ import 'paths.dart';
 /// One catalog entry: a service id and the folders it needs.
 final class ServiceGrant {
   /// Creates a grant entry.
-  const ServiceGrant(this.id, {required this.read, this.write = const [], this.description});
+  const ServiceGrant(
+    this.id, {
+    required this.read,
+    this.write = const [],
+    this.description,
+  });
 
   /// Catalog id used in `--use-<id>`.
   final String id;
@@ -54,14 +59,17 @@ const List<ServiceGrant> kServiceCatalog = <ServiceGrant>[
 ];
 
 /// Catalog ids in catalog order.
-List<String> get serviceCatalogIds =>
-    [for (final g in kServiceCatalog) g.id];
+List<String> get serviceCatalogIds => [for (final g in kServiceCatalog) g.id];
 
 /// Resolved folder grants for a set of `--use-*` flags: expanded, deduped,
 /// sorted.
 final class ServiceGrantsResolved {
   /// Creates a resolved grant set.
-  const ServiceGrantsResolved({required this.read, required this.write, required this.used});
+  const ServiceGrantsResolved({
+    required this.read,
+    required this.write,
+    required this.used,
+  });
 
   /// Read-only folders (absolute, expanded).
   final List<String> read;
@@ -75,7 +83,10 @@ final class ServiceGrantsResolved {
 
 /// Resolves `--use-*` [flags] against the catalog. Unknown ids throw
 /// [ConfigException] listing the whole catalog (fail-closed, E9).
-ServiceGrantsResolved resolveServiceGrants(Set<String> flags, {required String home}) {
+ServiceGrantsResolved resolveServiceGrants(
+  Set<String> flags, {
+  required String home,
+}) {
   final byId = {for (final g in kServiceCatalog) g.id: g};
   for (final flag in flags) {
     if (!byId.containsKey(flag)) {
@@ -135,7 +146,9 @@ List<String> bothSpellingsOf(String p) {
   for (final base in ['/etc', '/tmp', '/var']) {
     if (p == base || p.startsWith('$base/')) out.add(priv(p));
     final pb = priv(base);
-    if (p == pb || p.startsWith('$pb/')) out.add(p.substring('/private'.length));
+    if (p == pb || p.startsWith('$pb/')) {
+      out.add(p.substring('/private'.length));
+    }
   }
   if (p == '/Users' || p.startsWith('/Users/')) out.add(priv(p));
   const pu = '/private/Users';

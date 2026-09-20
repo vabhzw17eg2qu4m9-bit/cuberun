@@ -49,10 +49,13 @@ Future<({int code, String out})> _bashOut(
   String profilePath,
   String script,
 ) async {
-  final r = await runner(
-    'sandbox-exec',
-    ['-f', profilePath, '/bin/bash', '-c', script],
-  );
+  final r = await runner('sandbox-exec', [
+    '-f',
+    profilePath,
+    '/bin/bash',
+    '-c',
+    script,
+  ]);
   return (code: r.exitCode ?? 126, out: r.stdout);
 }
 
@@ -106,7 +109,7 @@ Future<ProbeReport> probeHarness({
     runner,
     profilePath,
     'cat ${_q('$secretDir/flag')} 2>/dev/null; '
-        'echo x > ${_q('$secretDir/w')} 2>/dev/null; echo done',
+    'echo x > ${_q('$secretDir/w')} 2>/dev/null; echo done',
   );
   final secretLeaked = rd.out.contains('secret');
   final secretWritten = io.File('$secretDir/w').existsSync();

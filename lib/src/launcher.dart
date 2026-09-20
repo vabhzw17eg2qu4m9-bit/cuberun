@@ -5,7 +5,6 @@ library;
 
 import 'dart:io' as io;
 
-
 /// Maps a dart child exit code to the launcher's POSIX exit: dart reports
 /// signal deaths as NEGATIVE exit codes; `-9` (SIGKILL) becomes 137.
 int mapChildExit(int exitCode) => exitCode < 0 ? 128 - exitCode : exitCode;
@@ -19,11 +18,11 @@ Future<int> launchConfined({
 }) async {
   final List<int> code;
   try {
-    final proc = await io.Process.start(
-      'sandbox-exec',
-      ['-f', profilePath, ...command],
-      mode: io.ProcessStartMode.inheritStdio,
-    );
+    final proc = await io.Process.start('sandbox-exec', [
+      '-f',
+      profilePath,
+      ...command,
+    ], mode: io.ProcessStartMode.inheritStdio);
     code = [await proc.exitCode];
   } on io.ProcessException catch (e) {
     onFailClosed?.call(

@@ -29,9 +29,7 @@ final class HarnessPresets {
   static HarnessSpec load(String id) {
     final text = manifests[id];
     if (text == null) {
-      throw ConfigException(
-        'no preset "$id" (presets: ${ids.join(', ')})',
-      );
+      throw ConfigException('no preset "$id" (presets: ${ids.join(', ')})');
     }
     return HarnessSpec.fromYamlText(text, sourcePath: '<preset:$id>');
   }

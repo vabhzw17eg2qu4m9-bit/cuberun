@@ -26,7 +26,9 @@ String renderValue(Object? v) => v is String ? '"$v"' : '$v';
 /// resolve). Throws [ConfigException] naming [where] on any violation.
 String sanitizeManifestPath(Object? value, String where) {
   if (value is! String) {
-    throw ConfigException('$where: must be a path string, got ${value.runtimeType}');
+    throw ConfigException(
+      '$where: must be a path string, got ${value.runtimeType}',
+    );
   }
   final p = value;
   if (p.trim().isEmpty) {
@@ -48,11 +50,15 @@ String sanitizeManifestPath(Object? value, String where) {
   }
   for (final segment in p.split('/')) {
     if (segment == '..') {
-      throw ConfigException('$where: ".." climbs are not allowed in ${renderValue(p)}');
+      throw ConfigException(
+        '$where: ".." climbs are not allowed in ${renderValue(p)}',
+      );
     }
   }
   if (p.length > 1 && p.endsWith('/')) {
-    throw ConfigException('$where: trailing "/" not allowed in ${renderValue(p)}');
+    throw ConfigException(
+      '$where: trailing "/" not allowed in ${renderValue(p)}',
+    );
   }
   return p;
 }
