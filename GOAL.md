@@ -447,9 +447,11 @@ Merge rule: **a red `integration` or `build` job blocks merge even when
 - fa exposes no env var for its home today; the fa preset ships without
   `agentRootEnv` until upstream grows one — override via a user profile
   file meanwhile. (Owner call: none needed for v1.)
-- Repo visibility: created private under the authenticated account
-  (`vabhzw17eg2qu4m9-bit/cuberun`, token scopes `repo`+`workflow`);
-  flip to public when the owner decides.
+- Repo visibility: RESOLVED 2026-09-21 — owner flipped the repo to
+  public; branch protection now enforces the merge rule on PRs
+  (required checks: analyze/test/integration/build, strict,
+  no force-pushes/deletions; direct admin pushes stay allowed for the
+  single-writer workflow).
 
 ## References
 
