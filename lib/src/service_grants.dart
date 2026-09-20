@@ -141,17 +141,22 @@ List<String> ungrantableViolations(List<String> paths, String home) {
 /// `/Users <-> /private/Users` — BOTH must appear or the kernel spelling
 /// escapes the rule (E2).
 List<String> bothSpellingsOf(String p) {
-  String priv(String x) => '/private$x';
   final out = <String>{p};
-  for (final base in ['/etc', '/tmp', '/var']) {
-    if (p == base || p.startsWith('$base/')) out.add(priv(p));
-    final pb = priv(base);
-    if (p == pb || p.startsWith('$pb/')) {
-      out.add(p.substring('/private'.length));
-    }
+  for (final base in const ['/etc', '/tmp', '/var', '/Users']) {
+    out.addAll(_privateSpellingPair(p, base));
   }
-  if (p == '/Users' || p.startsWith('/Users/')) out.add(priv(p));
-  const pu = '/private/Users';
-  if (p == pu || p.startsWith('$pu/')) out.add(p.substring('/private'.length));
   return out.toList()..sort();
+}
+
+/// Both spellings of [p] for one `X <-> /private/X` prefix pair: adds
+/// `/private<p>` when [p] is at or under [base], and the un-prefixed
+/// spelling when [p] is at or under `/private[base]`.
+List<String> _privateSpellingPair(String p, String base) {
+  final out = <String>[];
+  if (p == base || p.startsWith('$base/')) out.add('/private$p');
+  final privateBase = '/private$base';
+  if (p == privateBase || p.startsWith('$privateBase/')) {
+    out.add(p.substring('/private'.length));
+  }
+  return out;
 }

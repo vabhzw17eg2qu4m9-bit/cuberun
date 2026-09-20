@@ -77,6 +77,14 @@ declarative source (impossible-by-construction, asserted by REG
 byte-scans). The single operator escape hatch is the human-typed
 `CUBERUN_EXTRA_READ` env knob: honored, never silent (loud ⚠ banner).
 
+**Git remotes under confinement**: **https** remotes work for public
+repos as-is; **private** https remotes need `--use-github` so the gh
+token and `~/.gitconfig` are readable — without it a private clone fails
+with the remote's auth error (the desired failure mode, E11). **ssh**
+remotes deliberately fail: `~/.ssh` is ungrantable (E10 — key material
+stays out of every profile by construction), so a confined
+`git@github.com:…` remote is a loud auth failure, never a silent grant.
+
 ## Env knobs
 
 - `CUBERUN_EXTRA_READ` — colon-separated read-only grants (`~` ok)

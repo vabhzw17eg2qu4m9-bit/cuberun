@@ -24,6 +24,8 @@ void main() {
     rejects('/tmp/../etc', 'dotdot climb');
     rejects('/tmp/a"b', 'embedded quote');
     rejects('/tmp/a\nb', 'embedded newline');
+    rejects('/tmp/a\rb', 'embedded carriage return');
+    rejects('/tmp/a\x00b', 'embedded NUL');
     rejects('/trailing/', 'trailing slash');
     rejects('~otheruser/x', 'foreign-home tilde');
 

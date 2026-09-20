@@ -181,27 +181,16 @@ HarnessRuntime _resolve(
   required Map<String?, String?> env,
   required RuntimeIO io,
 }) {
-  // --- agent root: manifest (or env override), then dot-dir widening.
-  var agentRoot = expandTilde(spec.agentRoot, home);
-  final envName = spec.agentRootEnv;
-  if (envName != null) {
-    final v = env[envName];
-    if (v != null && v.trim().isNotEmpty) {
-      agentRoot = sanitizeManifestPath(
-        expandTilde(v.trim(), home),
-        'env($envName)',
-      );
-    }
-  }
-  if (spec.widenToDotParent) {
-    agentRoot = widenToDotParent(agentRoot);
-  }
+  final agentRoot = _resolveAgentRootPath(spec, home: home, env: env);
 
   // --- declarative grants (manifest) + ungrantable check (E10).
   final manifestRead = [for (final p in spec.extraRead) expandTilde(p, home)];
   final manifestWrite = [for (final p in spec.extraWrite) expandTilde(p, home)];
-  final declarative = <String>[agentRoot, ...manifestRead, ...manifestWrite];
-  final violations = ungrantableViolations(declarative, home);
+  final violations = ungrantableViolations([
+    agentRoot,
+    ...manifestRead,
+    ...manifestWrite,
+  ], home);
   if (violations.isNotEmpty) {
     throw ConfigException(
       'ungrantable path(s) from manifest "${spec.name}": '
@@ -227,6 +216,24 @@ HarnessRuntime _resolve(
 
   // --- env knobs: CUBERUN_EXTRA_WRITE never blocklisted; EXTRA_READ is
   //     the operator escape hatch — honored but never silent.
+  final knobs = _resolveEnvKnobs(env, home: home);
+
+  return HarnessRuntime(
+    projDir: cwd,
+    agentRoot: agentRoot,
+    tmp: _resolveTmp(env, io),
+    extraRead: _mergeDistinct([manifestRead, grants.read, knobs.read]),
+    extraWrite: _mergeDistinct([manifestWrite, grants.write, knobs.write]),
+    runtimeDirs: _runtimeDirsFor(spec.command, cwd: cwd, env: env, io: io),
+    services: Set.of(services),
+    warnings: List.unmodifiable(knobs.warnings),
+  );
+}
+
+/// Env-knob grants (`CUBERUN_EXTRA_WRITE` / `CUBERUN_EXTRA_READ`) plus the
+/// resulting operator warnings.
+({List<String> read, List<String> write, List<String> warnings})
+_resolveEnvKnobs(Map<String?, String?> env, {required String home}) {
   final warnings = <String>[];
   final envWrite = parseEnvPathList(env['CUBERUN_EXTRA_WRITE'], home);
   final writeViolations = ungrantableViolations(envWrite, home);
@@ -238,43 +245,56 @@ HarnessRuntime _resolve(
     );
   }
   final envRead = parseEnvPathList(env['CUBERUN_EXTRA_READ'], home);
-  final readViolations = ungrantableViolations(envRead, home);
-  for (final v in readViolations) {
+  for (final v in ungrantableViolations(envRead, home)) {
     warnings.add(
       'CUBERUN_EXTRA_READ carries blocklisted path $v — operator override '
       'honored, NEVER silent (E10)',
     );
   }
+  return (read: envRead, write: envWrite, warnings: warnings);
+}
 
-  // --- $TMPDIR: realpath to the /private spelling the kernel sees (E2).
+/// Agent root: manifest value (or `agentRootEnv` override), then one
+/// dot-dir widening when `widenToDotParent` is set.
+String _resolveAgentRootPath(
+  HarnessSpec spec, {
+  required String home,
+  required Map<String?, String?> env,
+}) {
+  var agentRoot = expandTilde(spec.agentRoot, home);
+  final envName = spec.agentRootEnv;
+  if (envName != null) {
+    final v = env[envName];
+    if (v != null && v.trim().isNotEmpty) {
+      agentRoot = sanitizeManifestPath(
+        expandTilde(v.trim(), home),
+        'env($envName)',
+      );
+    }
+  }
+  if (spec.widenToDotParent) agentRoot = widenToDotParent(agentRoot);
+  return agentRoot;
+}
+
+/// `$TMPDIR`: realpath to the /private spelling the kernel sees (E2);
+/// unset/empty falls back to `/tmp`.
+String _resolveTmp(Map<String?, String?> env, RuntimeIO io) {
   final tmpRaw = env['TMPDIR'] != null && env['TMPDIR']!.trim().isNotEmpty
       ? env['TMPDIR']!
       : '/tmp';
-  final tmp = io.realpath(tmpRaw) ?? tmpRaw;
+  return io.realpath(tmpRaw) ?? tmpRaw;
+}
 
-  // --- runtime dirs of the command itself (E5).
-  final runtimeDirs = _runtimeDirsFor(spec.command, cwd: cwd, env: env, io: io);
-
-  List<String> merge(List<List<String>> lists) {
-    final out = <String>[];
-    for (final l in lists) {
-      for (final p in l) {
-        if (!out.contains(p)) out.add(p);
-      }
+/// Ordered dedup across grant lists — first occurrence wins (manifest,
+/// then service grants, then env knobs).
+List<String> _mergeDistinct(List<List<String>> lists) {
+  final out = <String>[];
+  for (final l in lists) {
+    for (final p in l) {
+      if (!out.contains(p)) out.add(p);
     }
-    return out;
   }
-
-  return HarnessRuntime(
-    projDir: cwd,
-    agentRoot: agentRoot,
-    tmp: tmp,
-    extraRead: merge([manifestRead, grants.read, envRead]),
-    extraWrite: merge([manifestWrite, grants.write, envWrite]),
-    runtimeDirs: runtimeDirs,
-    services: Set.of(services),
-    warnings: List.unmodifiable(warnings),
-  );
+  return out;
 }
 
 /// `~/.pi/agent` -> `~/.pi`: widen when the PARENT is a dot-dir

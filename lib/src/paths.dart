@@ -18,6 +18,50 @@ String expandTilde(String path, String home) {
 /// Renders a yaml value for error messages: strings quoted, others bare.
 String renderValue(Object? v) => v is String ? '"$v"' : '$v';
 
+void _requireNonEmpty(String p, String where) {
+  if (p.trim().isEmpty) {
+    throw ConfigException('$where: must be a non-empty path');
+  }
+}
+
+void _requireNoForbiddenChars(String p, String where) {
+  if (p.contains('"') ||
+      p.contains('\n') ||
+      p.contains('\r') ||
+      p.contains('\x00')) {
+    throw ConfigException(
+      '$where: forbidden character (quote/newline/NUL) in ${renderValue(p)}',
+    );
+  }
+}
+
+void _requireRooted(String p, String where) {
+  final tildeOk = p == '~' || p.startsWith('~/');
+  if (!p.startsWith('/') && !tildeOk) {
+    throw ConfigException(
+      '$where: must be absolute or ~/-prefixed, got ${renderValue(p)}',
+    );
+  }
+}
+
+void _requireNoDotDotSegments(String p, String where) {
+  for (final segment in p.split('/')) {
+    if (segment == '..') {
+      throw ConfigException(
+        '$where: ".." climbs are not allowed in ${renderValue(p)}',
+      );
+    }
+  }
+}
+
+void _requireNoTrailingSlash(String p, String where) {
+  if (p.length > 1 && p.endsWith('/')) {
+    throw ConfigException(
+      '$where: trailing "/" not allowed in ${renderValue(p)}',
+    );
+  }
+}
+
 /// Validates a declarative path (manifest `agentRoot`, `extraRead`,
 /// `extraWrite`, service grants): non-empty, absolute or `~/`-prefixed,
 /// no `"`, newlines, NUL, no `.`/`..` segments, no trailing `/`.
@@ -31,35 +75,11 @@ String sanitizeManifestPath(Object? value, String where) {
     );
   }
   final p = value;
-  if (p.trim().isEmpty) {
-    throw ConfigException('$where: must be a non-empty path');
-  }
-  if (p.contains('"') ||
-      p.contains('\n') ||
-      p.contains('\r') ||
-      p.contains('\x00')) {
-    throw ConfigException(
-      '$where: forbidden character (quote/newline/NUL) in ${renderValue(p)}',
-    );
-  }
-  final tildeOk = p == '~' || p.startsWith('~/');
-  if (!p.startsWith('/') && !tildeOk) {
-    throw ConfigException(
-      '$where: must be absolute or ~/-prefixed, got ${renderValue(p)}',
-    );
-  }
-  for (final segment in p.split('/')) {
-    if (segment == '..') {
-      throw ConfigException(
-        '$where: ".." climbs are not allowed in ${renderValue(p)}',
-      );
-    }
-  }
-  if (p.length > 1 && p.endsWith('/')) {
-    throw ConfigException(
-      '$where: trailing "/" not allowed in ${renderValue(p)}',
-    );
-  }
+  _requireNonEmpty(p, where);
+  _requireNoForbiddenChars(p, where);
+  _requireRooted(p, where);
+  _requireNoDotDotSegments(p, where);
+  _requireNoTrailingSlash(p, where);
   return p;
 }
 

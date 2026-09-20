@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# cuberun pre-commit "krep": self-healing format + CRAP < 10 gate.
+# Convention copied from flutter_agent_harness scripts/pre-commit (lean
+# cut: no flutter/golden stages here). Install: git config core.hooksPath
+# .githooks.  Skip (emergency only): git commit --no-verify.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+# 1. Self-healing format of STAGED Dart files only (never mid-edit
+#    siblings' unstaged work).
+STAGED_DART=$(git diff --cached --name-only --diff-filter=ACM | grep '\.dart$' || true)
+if [ -n "$STAGED_DART" ]; then
+  printf '%s\n' "$STAGED_DART" | xargs dart format >/dev/null 2>&1 || true
+  printf '%s\n' "$STAGED_DART" | xargs git add --
+  UNFORMATTED=$(dart format --output=none --set-exit-if-changed $STAGED_DART 2>/dev/null | grep '^Changed' || true)
+  if [ -n "$UNFORMATTED" ]; then
+    echo "❌ dart format could not fix (syntax error?): $UNFORMATTED" >&2
+    exit 1
+  fi
+fi
+
+# 2. CRAP ratchet (< 10, crap4dart.yaml) — only when lib/bin sources are
+#    staged; not activated here ⇒ CI covers it.
+if echo "$STAGED_DART" | grep -qE '^(lib|bin)/'; then
+  C4D_VER=$(dart pub global list 2>/dev/null | awk '$1=="crap4dart"{print $2}')
+  case "$C4D_VER" in
+    0.9.*|0.[1-9][0-9].*|[1-9].*)
+      echo "🧪 CRAP gate (tests + coverage + ratchet)..."
+      dart test --coverage=coverage --exclude-tags integration >/dev/null
+      dart run coverage:format_coverage --lcov -i coverage -o coverage/lcov.info >/dev/null
+      # `analyze` enforces the CRAP threshold (exit 2 on breach);
+      # `check` runs the configured gates (public_docs). Verified by
+      # sabotage: plain `check` ignores the threshold.
+      if ! dart pub global run crap4dart analyze; then
+        echo "❌ CRAP ≥ 10 — refactor before committing (crap4dart.yaml ratchet)" >&2
+        exit 1
+      fi
+      if ! dart pub global run crap4dart check; then
+        echo "❌ crap4dart gates failed (public_docs?)" >&2
+        exit 1
+      fi
+      ;;
+    "") ;; # not activated — skip silently (CI is the gate)
+    *)
+      echo "⚠️  crap4dart $C4D_VER too old for check (need >= 0.9.5);" \
+           "skipping — run: dart pub global activate crap4dart" >&2
+      ;;
+  esac
+fi

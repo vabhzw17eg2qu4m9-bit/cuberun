@@ -204,4 +204,16 @@ spec:
     expect(reparsed.extraRead, spec.extraRead);
     expect(reparsed.extraWrite, spec.extraWrite);
   });
+
+  test('toYamlText renders description and round-trips it', () {
+    final spec = HarnessSpec(
+      name: 'described',
+      description: 'test harness',
+      command: ['myh'],
+      agentRoot: '~/.myh',
+    );
+    final text = spec.toYamlText();
+    expect(text, contains("  description: 'test harness'\n"));
+    expect(HarnessSpec.fromYamlText(text).description, 'test harness');
+  });
 }

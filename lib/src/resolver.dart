@@ -69,6 +69,8 @@ final class _Scanned {
   final String? description;
 }
 
+/// Precedence-chain resolver: `--file` > project `.cuberun/` > user
+/// `~/.cuberun/` > built-in presets (GOAL AC3).
 final class HarnessResolver {
   /// Creates a resolver rooted at [cwd]/[home].
   const HarnessResolver({required this.cwd, required this.home});

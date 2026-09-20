@@ -105,14 +105,14 @@ Future<BackendCheck> preflightBackend({
   return BackendCheck(ok: true, detail: 'sandbox-exec probe ok');
 }
 
-/// Minimal `which`: first PATH entry holding an executable [name];
+/// Minimal `which` over an explicit [path] string (`$PATH`-shaped,
+/// colon-separated): first entry holding an executable [name];
 /// absolute [name]s are checked as-is.
-String? _whichPath(String name) {
+String? whichPathIn(String name, String path) {
   if (name.contains('/')) {
     final f = io.File(name);
     return f.existsSync() && (f.statSync().mode & 0x49) != 0 ? name : null;
   }
-  final path = io.Platform.environment['PATH'] ?? '';
   for (final dir in path.split(':')) {
     if (dir.trim().isEmpty) continue;
     final candidate = '$dir/$name';
@@ -121,3 +121,6 @@ String? _whichPath(String name) {
   }
   return null;
 }
+
+String? _whichPath(String name) =>
+    whichPathIn(name, io.Platform.environment['PATH'] ?? '');

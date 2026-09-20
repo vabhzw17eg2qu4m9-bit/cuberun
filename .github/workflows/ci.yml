@@ -31,8 +31,15 @@ jobs:
       - uses: dart-lang/setup-dart@v1
         with:
           sdk: stable
-      - run: dart pub get
-      - run: dart test --exclude-tags integration
+      - run: dart test --coverage=coverage --exclude-tags integration
+      - run: dart run coverage:format_coverage --lcov -i coverage -o coverage/lcov.info
+      - name: CRAP ratchet (< 10, crap4dart.yaml) + public_docs gate
+        run: |
+          dart pub global activate crap4dart
+          # analyze enforces the threshold (exit 2 on breach); check runs
+          # the gates enabled in crap4dart.yaml (public_docs).
+          dart pub global run crap4dart analyze
+          dart pub global run crap4dart check
 
   integration:
     runs-on: macos-15

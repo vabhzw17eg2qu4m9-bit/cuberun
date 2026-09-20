@@ -1,3 +1,6 @@
+import 'dart:convert' show utf8;
+import 'dart:io' as io;
+
 import 'package:cuberun/src/harness_manifest.dart';
 import 'package:cuberun/src/runtime.dart';
 import 'package:test/test.dart';
@@ -149,9 +152,72 @@ void main() {
     });
   });
 
+  group('FsRuntimeIO.shebangInterpreter (real IO)', () {
+    late io.Directory tmp;
+    setUp(() => tmp = io.Directory.systemTemp.createTempSync('shebang_ut'));
+    tearDown(() => tmp.deleteSync(recursive: true));
+
+    String? interp(List<int> bytes) {
+      final f = io.File('${tmp.path}/s')..writeAsBytesSync(bytes);
+      return const FsRuntimeIO().shebangInterpreter(f.path);
+    }
+
+    test('plain shebang', () {
+      expect(interp(utf8.encode('#!/bin/sh\n')), '/bin/sh');
+    });
+
+    test('interpreter is the first whitespace token (env pattern)', () {
+      expect(interp(utf8.encode('#!/usr/bin/env node\n')), '/usr/bin/env');
+    });
+
+    test('space after #! is trimmed', () {
+      expect(interp(utf8.encode('#! /bin/sh\n')), '/bin/sh');
+    });
+
+    test('CRLF line ending: carriage return does not leak in', () {
+      expect(interp(utf8.encode('#!/bin/sh\r\necho hi\n')), '/bin/sh');
+    });
+
+    test('missing trailing newline: last line still parsed', () {
+      expect(interp(utf8.encode('#!/usr/bin/perl')), '/usr/bin/perl');
+    });
+
+    test('no shebang is null', () {
+      expect(interp(utf8.encode('echo hi\n')), isNull);
+    });
+
+    test('empty file is null', () {
+      expect(interp(const []), isNull);
+    });
+
+    test('two-byte "#!" is null (length guard)', () {
+      expect(interp(utf8.encode('#!')), isNull);
+    });
+
+    test('"#!" with empty interpreter line is null', () {
+      expect(interp(utf8.encode('#!\n')), isNull);
+    });
+
+    test('missing file is null', () {
+      expect(
+        const FsRuntimeIO().shebangInterpreter('${tmp.path}/nope'),
+        isNull,
+      );
+    });
+  });
+
   test(r'$TMPDIR realpath:ed (E2) — /var spelling resolved to /private', () {
     final rt = _resolveAgentRoot(env: {'TMPDIR': '/var/folders/ab/T9'});
     expect(rt.tmp, '/private/var/folders/ab/T9');
+  });
+
+  test('resolveRuntime falls back to process cwd/home/env (CLI default)', () {
+    // No cwd/home/env overrides: machine facts must come from the process,
+    // exactly as the CLI entrypoint calls it.
+    final rt = resolveRuntime(_spec(), services: const {});
+    expect(rt.projDir, io.Directory.current.path);
+    final home = io.Platform.environment['HOME'];
+    expect(rt.agentRoot, home == null ? '/.myh' : '$home/.myh');
   });
 }
 

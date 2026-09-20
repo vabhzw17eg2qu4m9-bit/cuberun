@@ -56,7 +56,11 @@ and makes a new confined harness a YAML file instead of a fork.
 Named components (pure Dart except the two IO edges; style, gates and
 verification conventions copied from flutter_agent_harness —
 `analysis_options.yaml` with `lints/recommended`, doc comments on every
-public member, `dart format` self-healing pre-commit, CI as the gate):
+public member, `dart format` self-healing pre-commit, CI as the gate;
+v4.1 owner rule: **CRAP ratchet < 10** via crap4dart — `crap4dart.yaml`
+threshold 9.9, `.githooks/pre-commit` креп runs unit suite + coverage +
+`crap4dart analyze`/`check` before every commit, CI `test` job enforces
+the same ratchet):
 
 ```
 cuberun run pi
@@ -357,7 +361,9 @@ prose. Every task has an expected outcome BEFORE it runs:
   tool-verb catalog is pinned (AC14).
 
 CI wiring (GitHub Actions, `macos-15` arm64 only, single `ci.yml`):
-jobs `analyze` / `test` / `integration` / `build` as in Distribution.
+jobs `analyze` / `test` / `integration` / `build` as in Distribution;
+the `test` job also regenerates coverage and enforces the CRAP ratchet
+(v4.1: `crap4dart analyze` exit-2 blocks, `check` public_docs gate).
 Merge rule: **a red `integration` or `build` job blocks merge even when
 `test` is green**; `test` never substitutes for `integration`.
 

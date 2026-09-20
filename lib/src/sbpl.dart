@@ -55,17 +55,23 @@ final class _Rule {
   final bool metadata; // file-read-metadata instead of file-read*
 }
 
+/// Lexicographic sort key: bare rules first (length -1), then path length,
+/// verb (deny < allow), kind (literal < subpath), finally path text.
+List<Comparable<Object?>> _sortKey(_Rule r) => <Comparable<Object?>>[
+  r.kind == _Kind.bare ? -1 : r.path.length,
+  r.verb == _Verb.deny ? 0 : 1,
+  r.kind == _Kind.literal ? 0 : 1,
+  r.path,
+];
+
 int _compare(_Rule a, _Rule b) {
-  final la = a.kind == _Kind.bare ? -1 : a.path.length;
-  final lb = b.kind == _Kind.bare ? -1 : b.path.length;
-  if (la != lb) return la < lb ? -1 : 1;
-  final va = a.verb == _Verb.deny ? 0 : 1;
-  final vb = b.verb == _Verb.deny ? 0 : 1;
-  if (va != vb) return va < vb ? -1 : 1;
-  final ka = a.kind == _Kind.literal ? 0 : 1;
-  final kb = b.kind == _Kind.literal ? 0 : 1;
-  if (ka != kb) return ka < kb ? -1 : 1;
-  return a.path.compareTo(b.path);
+  final ka = _sortKey(a);
+  final kb = _sortKey(b);
+  for (var i = 0; i < ka.length; i++) {
+    final c = ka[i].compareTo(kb[i]);
+    if (c != 0) return c;
+  }
+  return 0;
 }
 
 String _emit(_Rule r, String op) {

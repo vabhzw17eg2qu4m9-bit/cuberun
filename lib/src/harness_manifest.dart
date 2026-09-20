@@ -256,12 +256,31 @@ final class HarnessSpec {
     );
     b.writeln('apiVersion: cuberun/v1');
     b.writeln('kind: Harness');
+    _emitMetadata(b);
+    b.writeln('spec:');
+    _emitCommand(b);
+    b.writeln('  agentRoot: ${_quote(agentRoot)}');
+    if (agentRootEnv != null) {
+      b.writeln('  agentRootEnv: $agentRootEnv');
+    }
+    if (widenToDotParent) {
+      b.writeln('  widenToDotParent: true');
+    }
+    _emitPathList(b, 'extraRead', extraRead);
+    _emitPathList(b, 'extraWrite', extraWrite);
+    b.writeln('  network: open');
+    return b.toString();
+  }
+
+  void _emitMetadata(StringBuffer b) {
     b.writeln('metadata:');
     b.writeln('  name: $name');
     if (description != null) {
       b.writeln('  description: ${_quote(description!)}');
     }
-    b.writeln('spec:');
+  }
+
+  void _emitCommand(StringBuffer b) {
     if (command.length == 1) {
       b.writeln('  command: ${_quote(command.first)}');
     } else {
@@ -270,27 +289,14 @@ final class HarnessSpec {
         b.writeln('    - ${_quote(c)}');
       }
     }
-    b.writeln('  agentRoot: ${_quote(agentRoot)}');
-    if (agentRootEnv != null) {
-      b.writeln('  agentRootEnv: $agentRootEnv');
+  }
+
+  void _emitPathList(StringBuffer b, String key, List<String> paths) {
+    if (paths.isEmpty) return;
+    b.writeln('  $key:');
+    for (final p in paths) {
+      b.writeln('    - ${_quote(p)}');
     }
-    if (widenToDotParent) {
-      b.writeln('  widenToDotParent: true');
-    }
-    if (extraRead.isNotEmpty) {
-      b.writeln('  extraRead:');
-      for (final p in extraRead) {
-        b.writeln('    - ${_quote(p)}');
-      }
-    }
-    if (extraWrite.isNotEmpty) {
-      b.writeln('  extraWrite:');
-      for (final p in extraWrite) {
-        b.writeln('    - ${_quote(p)}');
-      }
-    }
-    b.writeln('  network: open');
-    return b.toString();
   }
 
   static String _sanitizeArgvEntry(Object? v, String where) {

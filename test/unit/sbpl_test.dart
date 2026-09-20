@@ -157,6 +157,22 @@ void main() {
     expect(fd, lessThan(nullIdx));
   });
 
+  test('full tie on (length, verb, kind) falls back to path text', () {
+    final text = emitProfile(
+      rt(extraWrite: ['/Users/dev/b', '/Users/dev/a']),
+    ).text;
+    final tie = text
+        .split('\n')
+        .where((l) => l.contains('file-write'))
+        .where(
+          (l) => l.contains('"/Users/dev/a"') || l.contains('"/Users/dev/b"'),
+        )
+        .toList();
+    expect(tie, hasLength(2));
+    expect(tie.first, '(allow file-write* (subpath "/Users/dev/a"))');
+    expect(tie.last, '(allow file-write* (subpath "/Users/dev/b"))');
+  });
+
   test('trailing newline, deterministic text', () {
     final text = emitProfile(rt()).text;
     expect(text.endsWith('\n'), isTrue);

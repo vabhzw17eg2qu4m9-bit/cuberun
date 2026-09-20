@@ -19,6 +19,13 @@ test:
     dart pub get
     dart test --exclude-tags integration
 
+# CRAP ratchet (< 10): unit suite + coverage + crap4dart (pre-commit parity).
+crap:
+    dart test --coverage=coverage --exclude-tags integration
+    dart run coverage:format_coverage --lcov -i coverage -o coverage/lcov.info
+    dart pub global run crap4dart analyze
+    dart pub global run crap4dart check
+
 # Full E2E: probe battery + tool-compat matrices + harness suites.
 # Needs a host where sandbox-exec can apply profiles (bare metal / CI).
 integration:
