@@ -27,7 +27,7 @@ void main() {
     expect(File(path).readAsStringSync(), '(version 1)\n');
     final gi = File('${tmp.path}/.gitignore');
     expect(gi.existsSync(), isTrue);
-    expect(gi.readAsStringSync(), '*\n!.gitignore\n');
+    expect(gi.readAsStringSync(), '*\n');
   });
 
   test('identical content is NOT rewritten (mtime stable)', () async {

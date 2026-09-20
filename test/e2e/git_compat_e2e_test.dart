@@ -8,10 +8,15 @@ import 'package:test/test.dart';
 
 import '../helpers/e2e_helpers.dart' as h;
 
+/// Confined profiles the matrix runs (AC12 requires `pi`/`fa`).
+const kMatrixProfiles = ['fa', 'pi'];
+
 /// AC12 — tool-compat matrix, git: EVERY verb in the pinned catalog
-/// (incl. pull, push, clone over https) runs inside the `fa` profile with
-/// `--use-github` against disposable fixture remotes with IDENTICAL
-/// outcomes to the unconfined baseline — zero sandbox-induced failures.
+/// (incl. pull, push, clone over https) runs inside the `pi`/`fa`
+/// profiles with `--use-github` against disposable fixture remotes with
+/// IDENTICAL outcomes to the unconfined baseline — zero sandbox-induced
+/// failures. E11 — an https private remote WITHOUT `--use-github` must
+/// fail with an AUTH-class error, never a sandbox/file-denial one.
 /// AC14 — the verb list is data from the pinned catalog: a suite entry
 /// without a catalog scenario fails the guard below.
 void main() {
@@ -42,28 +47,41 @@ void main() {
 
   for (final verb in kGitVerbs) {
     test(
-      'git $verb: confined == unconfined',
+      'git $verb: confined == unconfined (fa + pi)',
       () {
         final sc = scenarios[verb]!;
         final name = 'v-$verb';
-        final fixture = h.makeGitFixture(tmpRoot.path, name);
-        final remotePath = '${tmpRoot.path}/$name.git';
-        final seedDir = '${tmpRoot.path}/$name-seed';
+        // Per-verb root: clones never collide across verbs.
+        final froot = '${tmpRoot.path}/$name';
+        final fixture = h.makeGitFixture(froot, name);
+        // Second confined work repo: the pi leg shares no state with fa.
+        final piRepo = '$froot/confined-pi';
+        final piClone = _plainGit(['clone', fixture.remote, piRepo], froot);
+        expect(
+          piClone.exit,
+          0,
+          reason: 'pi-leg fixture clone failed: ${piClone.stderr}',
+        );
+        final remotePath = '$froot/$name.git';
+        final seedDir = '$froot/$name-seed';
         sc.sharedPrep?.call(remotePath, seedDir);
-        for (final side in [fixture.baseline, fixture.confined]) {
-          sc.prep?.call(side);
+        final repos = <String, String>{
+          'baseline': fixture.baseline,
+          'fa': fixture.confined,
+          'pi': piRepo,
+        };
+        for (final repo in repos.values) {
+          sc.prep?.call(repo);
         }
 
         final exits = <String, List<int>>{};
         final outs = <String, String>{};
-        for (final entry in {
-          'baseline': fixture.baseline,
-          'confined': fixture.confined,
-        }.entries) {
+        final stdouts = <String, String>{};
+        for (final entry in repos.entries) {
           final side = entry.key;
           final repo = entry.value;
-          final workDir = repo;
           final outBuf = StringBuffer();
+          final stdoutBuf = StringBuffer();
           final exitList = <int>[];
           for (final batch in sc.batches) {
             final args = [
@@ -73,39 +91,46 @@ void main() {
                     : a == 'CLONE_TARGET'
                     ? '../${_base(repo)}-cloned'
                     : a == 'WTNAME'
-                    ? '../${_base(repo)}-wt'
+                    ? 'wt' // in-repo: branch name must not derive from the side dir
                     : a,
             ];
             final r = side == 'baseline'
-                ? _plainGit(args, workDir)
-                : _confinedGit(args, workDir);
+                ? _plainGit(args, repo)
+                : _confinedGit(args, repo, side);
             exitList.add(r.exit);
             outBuf.write(r.stdout);
             outBuf.write(r.stderr);
+            stdoutBuf.write(r.stdout);
           }
           exits[side] = exitList;
           outs[side] = outBuf.toString();
+          stdouts[side] = stdoutBuf.toString();
         }
 
-        expect(
-          exits['confined'],
-          exits['baseline'],
-          reason: 'confined stderr: ${outs['confined']}',
-        );
-        String fpFor(String repo) =>
-            h.gitFingerprint(sc.cloneStyle ? _sibling(repo, '-cloned') : repo);
-        expect(
-          fpFor(fixture.confined),
-          fpFor(fixture.baseline),
-          reason:
-              'post-verb fingerprints diverged '
-              '(confined out: ${outs['confined']})',
-        );
-        if (sc.checkStdout) {
+        for (final profile in kMatrixProfiles) {
           expect(
-            h.normalizeOut(outs['confined']!, fixture.confined),
-            h.normalizeOut(outs['baseline']!, fixture.baseline),
+            exits[profile],
+            exits['baseline'],
+            reason: '[$profile] confined stderr: ${outs[profile]}',
           );
+          String fpFor(String repo) => h.gitFingerprint(
+            sc.cloneStyle ? _sibling(repo, '-cloned') : repo,
+          );
+          expect(
+            fpFor(repos[profile]!),
+            fpFor(repos['baseline']!),
+            reason:
+                '[$profile] post-verb fingerprints diverged '
+                '(confined out: ${outs[profile]})',
+          );
+          if (sc.checkStdout) {
+            // stdout ONLY: the confined launcher prints its grant banner on
+            // stderr, which must not count as divergence.
+            expect(
+              h.normalizeOut(stdouts[profile]!, repos[profile]!),
+              h.normalizeOut(stdouts['baseline']!, repos['baseline']!),
+            );
+          }
         }
       },
       skip: hostGuard ?? false,
@@ -120,9 +145,104 @@ void main() {
       addTearDown(() => root.deleteSync(recursive: true));
       const url = 'https://github.com/octocat/Hello-World.git';
       final base = _plainGit(['ls-remote', url], root.path);
-      final conf = _confinedGit(['ls-remote', url], root.path);
-      expect(conf.exit, base.exit, reason: 'confined stderr: ${conf.stderr}');
-      expect(conf.stdout, isNotEmpty);
+      for (final profile in kMatrixProfiles) {
+        final conf = _confinedGit(['ls-remote', url], root.path, profile);
+        expect(
+          conf.exit,
+          base.exit,
+          reason: '[$profile] confined stderr: ${conf.stderr}',
+        );
+        expect(conf.stdout, isNotEmpty);
+      }
+    },
+    skip: hostGuard ?? false,
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
+
+  test(
+    'E11: https private remote without --use-github fails AUTH, not sandbox',
+    () {
+      final repo = _targetRepo();
+      if (repo == null) {
+        markTestSkipped(
+          'no CUBERUN_GH_TARGET_REPO/GITHUB_REPOSITORY and `gh repo view` '
+          'resolved nothing — E11 needs a real private https remote',
+        );
+        return;
+      }
+      final vis = Process.runSync('gh', [
+        'repo',
+        'view',
+        repo,
+        '--json',
+        'visibility',
+        '-q',
+        '.visibility',
+      ]);
+      if (vis.exitCode != 0) {
+        markTestSkipped('gh repo view failed for $repo: ${vis.stderr}');
+        return;
+      }
+      if ((vis.stdout as String).trim() != 'PRIVATE') {
+        markTestSkipped(
+          '$repo is not private — no unauthenticable https remote '
+          'available for E11',
+        );
+        return;
+      }
+      final url = 'https://github.com/$repo.git';
+      // Deterministic unauthenticable setup on BOTH sides: no credential
+      // helper, no prompting, no global config — the only boundary the
+      // clone can hit is the credential one, not a file-denial one.
+      const e11Env = {
+        'GIT_TERMINAL_PROMPT': '0',
+        'GIT_ASKPASS': '/usr/bin/false',
+        'GIT_CONFIG_GLOBAL': '/dev/null',
+      };
+      const credOff = ['-c', 'credential.helper='];
+      for (final profile in kMatrixProfiles) {
+        final baseDir = '${tmpRoot.path}/e11-$profile-baseline';
+        final confDir = '${tmpRoot.path}/e11-$profile-confined';
+        final base = _plain(
+          [...credOff, 'clone', url, baseDir],
+          tmpRoot.path,
+          e11Env,
+        );
+        final conf = h.runCuberun(
+          ['run', profile, '--', 'git', ...credOff, 'clone', url, confDir],
+          cwd: tmpRoot.path,
+          env: e11Env,
+        );
+        final baseErr = base.stderr;
+        final confErr = _childStderr(conf.stderr);
+        expect(
+          base.exit,
+          isNot(0),
+          reason:
+              'baseline clone succeeded — $repo is anonymously '
+              'clonable, E11 needs a private remote: $baseErr',
+        );
+        expect(
+          _authFailure.hasMatch(baseErr),
+          isTrue,
+          reason: 'baseline failure is not auth-class: $baseErr',
+        );
+        expect(conf.exit, base.exit, reason: '[$profile] stderr: $confErr');
+        expect(
+          _authFailure.hasMatch(confErr),
+          isTrue,
+          reason:
+              '[$profile] E11 failure mode must classify AUTH, '
+              'got: $confErr',
+        );
+        expect(
+          _sandboxDenial.hasMatch(confErr),
+          isFalse,
+          reason:
+              '[$profile] E11 failure looks sandbox/file-denial, '
+              'not auth: $confErr',
+        );
+      }
     },
     skip: hostGuard ?? false,
     timeout: const Timeout(Duration(minutes: 2)),
@@ -413,20 +533,56 @@ String _sibling(String repo, String suffix) {
   return '${repo.substring(0, i)}/${_base(repo)}$suffix';
 }
 
-h.RunOut _plainGit(List<String> args, String cwd) {
+h.RunOut _plainGit(List<String> args, String cwd) => _plain(args, cwd, gitEnv);
+
+h.RunOut _plain(List<String> args, String cwd, Map<String, String> env) {
   final r = Process.runSync(
     'git',
     args,
     workingDirectory: cwd,
-    environment: gitEnv,
+    environment: env,
   );
   return h.RunOut(r.exitCode, r.stdout as String, r.stderr as String);
 }
 
-h.RunOut _confinedGit(List<String> args, String cwd) {
+h.RunOut _confinedGit(List<String> args, String cwd, String profile) {
   return h.runCuberun(
-    ['run', 'fa', '--use-github', '--', 'git', ...args],
+    ['run', profile, '--use-github', '--', 'git', ...args],
     cwd: cwd,
     env: gitEnv,
   );
+}
+
+/// Strips the confined launcher banner (⛨ + indented lines) so only the
+/// child's own stderr classifies.
+String _childStderr(String stderr) => stderr
+    .split('\n')
+    .where((l) => !l.startsWith('⛨') && !l.startsWith(' '))
+    .join('\n');
+
+final _authFailure = RegExp(
+  'could not read Username|Authentication failed|terminal prompts disabled|'
+  '401|403',
+);
+final _sandboxDenial = RegExp('Operation not permitted|sandbox|file-read');
+
+/// The cuberun repo itself (E11 private remote): CUBERUN_GH_TARGET_REPO >
+/// GITHUB_REPOSITORY (CI) > `gh repo view` in the checkout (dart test
+/// runs from the package root, which IS the repo). Null → loud skip.
+String? _targetRepo() {
+  final direct =
+      Platform.environment['CUBERUN_GH_TARGET_REPO'] ??
+      Platform.environment['GITHUB_REPOSITORY'];
+  if (direct != null && direct.trim().isNotEmpty) return direct.trim();
+  final r = Process.runSync('gh', const [
+    'repo',
+    'view',
+    '--json',
+    'nameWithOwner',
+    '-q',
+    '.nameWithOwner',
+  ], workingDirectory: Directory.current.path);
+  if (r.exitCode != 0) return null;
+  final s = (r.stdout as String).trim();
+  return s.isEmpty ? null : s;
 }

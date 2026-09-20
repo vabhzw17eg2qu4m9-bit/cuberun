@@ -30,9 +30,12 @@ String? nestedSandboxDeniedReason() {
 }
 
 /// Builds the cuberun binary once per suite run; returns its path.
+/// Absolute: tests invoke it with a differing workingDirectory, and a
+/// relative path would ENOENT from there.
 String ensureBinary() {
-  final exe = '.cache/cuberun-e2e';
+  final exe = '${Directory.current.path}/.cache/cuberun-e2e';
   if (!File(exe).existsSync()) {
+    File(exe).parent.createSync(recursive: true);
     final r = Process.runSync('dart', [
       'compile',
       'exe',

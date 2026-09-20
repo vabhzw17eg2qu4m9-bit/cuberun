@@ -20,31 +20,39 @@ import '../helpers/e2e_helpers.dart' as h;
 void main() {
   final hostGuard = h.nestedSandboxDeniedReason();
 
-  HarnessRuntime baseRuntime(String projDir, String home) => resolveRuntime(
-    HarnessSpec(name: 'pi', command: ['pi'], agentRoot: '~/.pi'),
-    services: const {},
-    cwd: projDir,
-    home: home,
-    env: {'HOME': home, 'TMPDIR': Directory.systemTemp.path},
-    fs: _RealIO(),
-  );
+  /// Probe fixture runtime. [projDir], [home] and [tmpDir] must be DISJOINT
+  /// realpath'd subtrees: the probe plants denial targets under [home], and
+  /// those only get denied when home is outside every write grant (proj,
+  /// agent root, TMPDIR) — passing home == proj or home inside the TMPDIR
+  /// grant makes the denial checks vacuous.
+  HarnessRuntime baseRuntime(String projDir, String home, String tmpDir) =>
+      resolveRuntime(
+        HarnessSpec(name: 'pi', command: ['pi'], agentRoot: '~/.pi'),
+        services: const {},
+        cwd: projDir,
+        home: home,
+        env: {'HOME': home, 'TMPDIR': tmpDir},
+        fs: _RealIO(),
+      );
 
   test(
     'AC6: full probe passes on the real backend',
     () async {
-      final tmp = await Directory.systemTemp.createTemp('cuberun-probe-');
-      addTearDown(() => tmp.delete(recursive: true));
-      final rt = baseRuntime(tmp.path, tmp.path);
+      final root = await Directory.systemTemp.createTemp('cuberun-probe-');
+      addTearDown(() => root.delete(recursive: true));
+      final proj = _sub(root, 'proj').path;
+      final home = _sub(root, 'home').path;
+      final rt = baseRuntime(proj, home, _sub(root, 'tmp').path);
       final profile = emitProfile(rt);
       final path = stageProfile(
-        cacheDir: projectCacheDir(tmp.path),
+        cacheDir: projectCacheDir(proj),
         text: profile.text,
         key10: profile.key10,
       );
       final report = await probeHarness(
         runtime: rt,
         profilePath: path,
-        home: tmp.path,
+        home: home,
       );
       expect(
         report.checks.map((c) => '${c.ok ? 'ok' : 'FAIL'} ${c.name} ${c.info}'),
@@ -61,22 +69,24 @@ void main() {
   test(
     'AC6 negative control: sabotaged profile FAILS the probe',
     () async {
-      final tmp = await Directory.systemTemp.createTemp('cuberun-neg-');
-      addTearDown(() => tmp.delete(recursive: true));
-      final rt = baseRuntime(tmp.path, tmp.path);
+      final root = await Directory.systemTemp.createTemp('cuberun-neg-');
+      addTearDown(() => root.delete(recursive: true));
+      final proj = _sub(root, 'proj').path;
+      final home = _sub(root, 'home').path;
+      final rt = baseRuntime(proj, home, _sub(root, 'tmp').path);
       final profile = emitProfile(rt);
       // Sabotage: append a trailing allow-all-writes rule — last match wins
       // in SBPL, so writes escape. The probe MUST catch it.
       final badText = '${profile.text}(allow file-write*)\n';
       final badPath = stageProfile(
-        cacheDir: projectCacheDir(tmp.path),
+        cacheDir: projectCacheDir(proj),
         text: badText,
         key10: 'sabotaged0',
       );
       final report = await probeHarness(
         runtime: rt,
         profilePath: badPath,
-        home: tmp.path,
+        home: home,
       );
       expect(
         report.allPassed,
@@ -96,9 +106,13 @@ void main() {
   test(
     'AC10 E2E: --use-github grants are read-only, rest of HOME denied',
     () async {
-      final tmp = await Directory.systemTemp.createTemp('cuberun-ghgrant-');
-      addTearDown(() => tmp.delete(recursive: true));
-      final home = tmp.path;
+      final root = await Directory.systemTemp.createTemp('cuberun-ghgrant-');
+      addTearDown(() => root.delete(recursive: true));
+      // Disjoint proj/home/tmp subtrees: the gh read grant must be the ONLY
+      // reason hosts.yml is readable, and the denial targets under home
+      // must sit outside proj/agent-root/TMPDIR write grants.
+      final home = _sub(root, 'home').path;
+      final proj = _sub(root, 'proj').path;
       final ghConfig = Directory('$home/.config/gh');
       ghConfig.createSync(recursive: true);
       File(
@@ -110,14 +124,14 @@ void main() {
       final rt = resolveRuntime(
         HarnessSpec(name: 'pi', command: ['pi'], agentRoot: '~/.pi'),
         services: const {'github'},
-        cwd: tmp.path,
+        cwd: proj,
         home: home,
-        env: {'HOME': home, 'TMPDIR': Directory.systemTemp.path},
+        env: {'HOME': home, 'TMPDIR': _sub(root, 'tmp').path},
         fs: _RealIO(),
       ).withGrants(read: grants.read); // ensure exact catalog folders
       final profile = emitProfile(rt);
       final path = stageProfile(
-        cacheDir: projectCacheDir(tmp.path),
+        cacheDir: projectCacheDir(proj),
         text: profile.text,
         key10: profile.key10,
       );
@@ -162,6 +176,13 @@ void main() {
 }
 
 String _q(String s) => "'${s.replaceAll("'", "'\"'\"'")}'";
+
+/// A realpath'd subdir under [root]. Grants must carry the /private/var
+/// spelling the kernel matches on (E2) — createTemp returns /var/... .
+Directory _sub(Directory root, String name) {
+  final d = Directory('${root.path}/$name')..createSync();
+  return Directory(d.resolveSymbolicLinksSync());
+}
 
 final class _RealIO implements RuntimeIO {
   @override

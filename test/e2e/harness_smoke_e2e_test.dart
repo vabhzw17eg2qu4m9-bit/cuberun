@@ -36,12 +36,14 @@ void main() {
         final which = Process.runSync('/usr/bin/which', [harness]);
         if (which.exitCode != 0) {
           markTestSkipped('$harness binary not on PATH — nothing to launch');
+          return;
         }
         if (!h.providerEnvPresent()) {
           markTestSkipped(
             'no provider env (ANTHROPIC_API_KEY/OPENAI_API_KEY/…) — '
             'AC13 skipped with reason, never silently green',
           );
+          return;
         }
         final proj = Directory.systemTemp.createTempSync('cuberun-smoke-');
         addTearDown(() => proj.deleteSync(recursive: true));

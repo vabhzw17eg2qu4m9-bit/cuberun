@@ -21,7 +21,10 @@ String stageProfile({
   dir.createSync(recursive: true);
   final gitignore = io.File('${dir.path}/.gitignore');
   if (!gitignore.existsSync()) {
-    gitignore.writeAsStringSync('*\n!.gitignore\n');
+    // `*` alone ignores everything INCLUDING this file: the cache must be
+    // invisible to the user's git status/add/commit (GOAL "gitignored
+    // cache"). A `!.gitignore` negation would leak it back into status.
+    gitignore.writeAsStringSync('*\n');
   }
   final finalPath = '${dir.path}/harness-$key10.sb';
   final file = io.File(finalPath);
