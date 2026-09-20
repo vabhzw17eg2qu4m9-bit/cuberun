@@ -1,6 +1,6 @@
-# GOAL — cuberun (v2, adds --use service grants)
+# GOAL — cuberun (v3, adds --use service grants + tool-compat matrix)
 
-## Goal — cuberun (v2, adds --use service grants)
+## Goal — cuberun (v3, adds --use service grants + tool-compat matrix)
 
 One sentence: **Every launch of a supported AI harness on this machine
 (pi / omp / fa) becomes kernel-confined by default** — one compiled Dart
@@ -38,6 +38,11 @@ and makes a new confined harness a YAML file instead of a fork.
   never forbids commands: with the kernel folder restrictions in place,
   no command is dangerous — it simply cannot reach anything outside its
   grants (owner's exact reasoning, keep it verbatim in spirit).
+- **Pinned principle (v3):** confinement must be INVISIBLE to working
+  commands — every tool command that works unconfined (e.g. `git pull`)
+  must work identically under the profile, or the profile is wrong, not
+  the command. The tool-compat matrix (below) is the proof, per tool,
+  per verb.
 
 ## Architecture
 
@@ -148,6 +153,11 @@ anything outside the union of grants.
     the Keychain), `~/.gitconfig` (identity + gh credential helper).
   - `--use-gitlab` — ro: `~/.config/glab`, `~/.gitconfig` (dedup with
     `--use-github`).
+  - `--use-nvm` — ro: `~/.nvm` (node installs under
+    `~/.nvm/versions/node/<v>/`, nvm.sh resolution state; synergie: the
+    runtime-prefix detection already turns a PATH entry under `~/.nvm`
+    into a read grant for the interpreter + its module tree — this flag
+    makes the whole nvm root readable so ANY installed node works).
 - **second tier (opt-in, follow-up):** `--use-npm` (ro `~/.npm`),
   `--use-pub` (rw `~/.pub-cache`), `--use-uv` (rw `~/.cache/uv`,
   `~/.local/share/uv`), `--use-cargo` (rw `~/.cargo`),
@@ -160,6 +170,40 @@ anything outside the union of grants.
   blocklist, E10); `--use-docker` (the docker socket equals root on
   this host class).
 
+### Tool compatibility (subject: each tool's FULL command set)
+
+The owner's requirement, verbatim in spirit: for EVERY tool the
+harnesses use, tests must run ALL of its commands inside the confined
+profile to prove the sandbox config breaks NOTHING — `git pull` named
+explicitly — and `pi`/`omp`/`fa` themselves must launch and work
+without errors. Exhaustive verb inventory, tiered:
+
+- **core — git (with `--use-github`):** status · log · diff · show ·
+  branch · remote · add · commit · push · pull · fetch · clone ·
+  checkout · switch · restore · stash · tag · merge · rebase ·
+  rev-parse · config · ls-files · blame · describe · worktree ·
+  cherry-pick · revert · clean · apply · rm · mv · rev-list ·
+  ls-remote. Platform facts pinned: identity/credentials come from the
+  granted `~/.gitconfig` + `~/.config/gh`; TLS for https remotes needs
+  no carve-out at Layer 0 — system dirs (incl. `/etc/ssl` and its
+  `/private/etc/ssl` spelling) stay readable by design (E1).
+- **core — gh (with `--use-github`):** auth status · api · repo view ·
+  issue/PR read+create · release view — token from `~/.config/gh`.
+- **core — the harnesses themselves:** `pi`, `omp`, `fa` each must
+  START under their Layer-0 profile and complete a trivial headless run
+  answering OK (pi: `pi --no-session -p "Reply with OK"`; omp/fa:
+  equivalent headless modes) — provider keys arrive via inherited env
+  (never logged), egress rides the open Layer-0 network (E1).
+- **second tier (opt-in, follow-up):** glab (with `--use-gitlab`),
+  node/npm/npx (with `--use-npm`/`--use-nvm`), cargo, uv, pip — same
+  full-verb treatment per tool as they gain flags.
+- **excluded from testing (with rationale; NOTHING is forbidden to
+  RUN):** `brew`, `sudo`, Keychain-touching `security` — not part of a
+  confined harness workflow on this host class; and destructive git
+  verbs against the HOST repos (`push --force` to origin main of a
+  foreign repo) — the matrix runs them against disposable fixture
+  remotes only.
+
 ### Distribution (subject: the binary)
 
 - **core:** `dart compile exe` → single static binary; `just build`;
@@ -169,7 +213,9 @@ anything outside the union of grants.
   macOS arm64 runner (`macos-15`): `analyze` (format
   --set-exit-if-changed + `dart analyze --fatal-infos`), `test` (unit,
   `--exclude-tags integration`), `integration` (E2E, `--tags
-  integration`), `build` (`dart compile exe` + smoke: `--version`,
+  integration` — probe suite, git/gh tool-compat matrices against the
+  workflow token, harness launch smoke when provider env exists),
+  `build` (`dart compile exe` + smoke: `--version`,
   `list`, `sbpl fa`, `probe fa` + artifact upload `cuberun-macos-arm64`).
 - **excluded:** ubuntu/linux CI legs (the backend is macOS-only; unit
   tests still run on macOS), cross-builds, Homebrew tap (second tier).
@@ -214,6 +260,21 @@ anything outside the union of grants.
   can ever emit an allow touching `~/.ssh`, `~/.gnupg` or keychain
   files — rejected at resolve, asserted by a REG byte-scan of all
   emitted profiles (E10).
+- **AC12** — tool-compat matrix, git: EVERY verb in the core git
+  inventory (incl. `pull`, `push`, `clone` over https) runs inside the
+  `pi`/`fa` profile with `--use-github` against disposable fixture
+  remotes and the real github.com (CI: workflow token) with IDENTICAL
+  outcomes to the unconfined baseline — zero sandbox-induced failures
+  (E2E `integration`).
+- **AC13** — harness launch: `pi`, `omp` and `fa` each start under
+  their own Layer-0 profile and complete a trivial headless run
+  answering OK, with stderr free of sandbox denials (E2E `integration`;
+  requires provider env — skipped with reason when absent, NEVER
+  silently passed).
+- **AC14** — tool-compat regression pin: the per-tool verb matrix is
+  data (a pinned catalog); adding a git subcommand to the suite without
+  extending the catalog fails the REG guard, and any matrix failure
+  blocks merge exactly like `integration`.
 
 ## Test plan
 
@@ -230,14 +291,20 @@ anything outside the union of grants.
   negative control (AC6), `--use-github` read-only grant variant
   (AC10), binary smoke (`--version`, `list`, `sbpl`, `probe`) in CI's
   build job.
+- `TOOL-*` (a flavor of E2E, same tag): per-tool full-verb matrices —
+  git (all ~31 verbs, fixture remotes + real github.com in CI, AC12),
+  gh (AC12), harness launch smoke for pi/omp/fa (AC13). Each verb
+  asserts confined-vs-unconfined outcome equality; the verb lists are
+  data from the pinned catalog (AC14).
 - `REG-*` regression guards: SBPL text of all three presets asserted
   against pinned expectations (deny roots, metadata re-allows, grant
   lines) — a diff in preset confinement is a RED build even when all
   behavior tests stay green; staged `.sb` byte-scan proves NO secret
   patterns (env values, tokens) ever enter the profile; the
   service-grant CATALOG is pinned — a folder list change without a GOAL
-  revision is a red build; and no profile for ANY flag combination
-  contains an allow for ssh/gnupg/keychain paths (AC11, E10).
+  revision is a red build; no profile for ANY flag combination
+  contains an allow for ssh/gnupg/keychain paths (AC11, E10); the
+  tool-verb catalog is pinned (AC14).
 
 CI wiring (GitHub Actions, `macos-15` arm64 only, single `ci.yml`):
 jobs `analyze` / `test` / `integration` / `build` as in Distribution.
@@ -290,6 +357,17 @@ Merge rule: **a red `integration` or `build` job blocks merge even when
   `CUBERUN_EXTRA_READ` env knob (operator's explicit decision): it is
   honored but NEVER silent — `run`/`show` print a loud ⚠ banner naming
   the blocklisted path it carries.
+- **E11 — `git pull` / network remotes under confinement.** https
+  remotes need no TLS carve-out at Layer 0 (system dirs readable, E1),
+  but credentials do: without `--use-github` a pull from a private
+  remote fails auth — that is the DESIRED behavior, and the matrix
+  asserts the failure MODE (auth, not sandbox denial). ssh remotes
+  deliberately fail (E10) — documented, loud, expected.
+- **E12 — tool-matrix drift.** New tool versions grow verbs (git gains
+  subcommands); the matrix is data, pinned by REG (AC14) — a suite
+  extension without a catalog update is red, and a catalog update
+  without a GOAL revision is red. Fixture remotes are disposable
+  (created per run, never the host's real repos).
 
 ## Non-goals
 
