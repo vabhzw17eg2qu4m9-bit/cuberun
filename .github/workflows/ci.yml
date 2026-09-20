@@ -1,0 +1,79 @@
+name: ci
+
+# Merge rule (GOAL): a red `integration` or `build` job blocks merge even
+# when `test` is green; `test` never substitutes for `integration`.
+# Skipped(provider) and failed are DIFFERENT colors — the integration job
+# reports skips explicitly and never treats them as green passes.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      - run: dart format --set-exit-if-changed .
+      - run: dart analyze --fatal-infos
+
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      - run: dart pub get
+      - run: dart test --exclude-tags integration
+
+  integration:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      - run: dart pub get
+      - name: full integration suite (probe + negative control + tool matrices)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: dart test --tags integration
+      - name: archive harness transcripts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: harness-artifacts
+          path: build/harness-artifacts/
+          if-no-files-found: ignore
+
+  build:
+    runs-on: macos-15
+    needs: [analyze]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      - run: dart pub get
+      - name: compile single static binary
+        run: |
+          dart compile exe bin/cuberun.dart -o build/cuberun-macos-arm64
+      - name: binary smoke (--version, list, sbpl fa, probe fa)
+        run: |
+          ./build/cuberun-macos-arm64 --version
+          ./build/cuberun-macos-arm64 list
+          ./build/cuberun-macos-arm64 sbpl fa > /dev/null
+          ./build/cuberun-macos-arm64 probe fa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cuberun-macos-arm64
+          path: build/cuberun-macos-arm64

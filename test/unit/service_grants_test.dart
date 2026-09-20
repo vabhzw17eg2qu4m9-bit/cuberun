@@ -72,10 +72,10 @@ void main() {
       extraRead: resolveServiceGrants(flags, home: home).read,
     );
 
-    expect(
-      emitProfile(mk({'github', 'github'})).text,
-      emitProfile(mk({'github'})).text,
-    );
+    final duplicated = <String>{
+      ...<String>['github', 'github'],
+    };
+    expect(emitProfile(mk(duplicated)).text, emitProfile(mk({'github'})).text);
   });
 
   test('AC4: grant flags change key10', () {
