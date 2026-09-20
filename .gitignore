@@ -1,0 +1,15 @@
+# Dart
+.dart_tool/
+build/
+*.iml
+.idea/
+.vscode/
+.DS_Store
+
+# Staged kernel profiles (content-keyed, gitignored by design — E7)
+.cuberun/cache/
+
+# Scratch for E2E suites
+.cache/
+
+# App package: lockfile IS committed (compiled binary — reproducible CI)
