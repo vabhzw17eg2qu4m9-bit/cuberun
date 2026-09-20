@@ -66,7 +66,7 @@ the same ratchet):
 cuberun run pi
   │
   ├─ HarnessResolver ──► HarnessSpec        (strict YAML manifest)
-  │    --file > <cwd>/.cuberun/<name>.yaml > ~/.cuberun/<name>.yaml > preset
+  │    --yaml > --file > <cwd>/.cuberun/<name>.yaml > ~/.cuberun/<name>.yaml > preset
   │
   ├─ HarnessPresets ────► pi | omp | fa     (manifest TEXT parsed by the
   │                                            same parser — no drift)
@@ -115,7 +115,7 @@ macOS `sandbox-exec` (SBPL) + Dart `dart compile exe`.
 
 | platform ability | our shape | notes |
 | --- | --- | --- |
-| confine a whole process tree | `cuberun run <profile> [-- cmd…]` | default command from the profile |
+| confine a whole process tree | `cuberun run <profile> [-- cmd…]`; `--yaml <text\|->` passes the manifest inline (stdin via `-`; with `--file` ⇒ error) | default command from the profile |
 | enumerate profiles | `cuberun list` | presets + project + user, with source labels |
 | inspect resolved grants | `cuberun show <profile>` | rw/ro/denied banner |
 | inspect the exact kernel profile | `cuberun sbpl <profile>` | deterministic text, no secrets |
@@ -270,8 +270,10 @@ prose. Every task has an expected outcome BEFORE it runs:
   naming the YAML path (UT table).
 - **AC2** — presets: exactly `fa`, `omp`, `pi` ship, each parses through
   the strict parser with its own agent root (UT).
-- **AC3** — resolution precedence: `--file` > project `.cuberun/` >
-  user `~/.cuberun/` > preset; not-found error lists where it looked
+- **AC3** — resolution precedence: `--yaml` (inline text or stdin `-`)
+  > `--file` > project `.cuberun/` >
+  user `~/.cuberun/` > preset (`--yaml` + `--file` together fails
+  closed); not-found error lists where it looked
   and the preset ids (IT with temp dirs).
 - **AC4** — determinism: identical runtime facts ⇒ byte-identical SBPL
   and `key10`; ANY grant change ⇒ different `key10`; rules emitted in

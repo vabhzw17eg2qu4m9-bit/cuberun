@@ -133,4 +133,75 @@ spec:
     final pi = rows.firstWhere((r) => r.stem == 'pi');
     expect(pi.source, HarnessSource.preset);
   });
+
+  // --yaml: inline manifest text (AC3 top rung).
+
+  const inline = '''
+apiVersion: cuberun/v1
+kind: Harness
+metadata:
+  name: pi
+spec:
+  command: inlined
+  agentRoot: /tmp/state
+''';
+
+  test('--yaml inline text parses through the strict parser', () {
+    final r = mk().resolve('pi', yaml: inline);
+    expect(r.source, HarnessSource.yaml);
+    expect(r.path, isNull);
+    expect(r.spec.command, ['inlined']);
+    expect(r.spec.name, 'pi'); // no filename stem: metadata.name keys
+  });
+
+  test('--yaml beats project/user/preset (top of the chain)', () {
+    Directory('$home/.cuberun').createSync(recursive: true);
+    File('$home/.cuberun/pi.yaml').writeAsStringSync(body);
+    Directory('$proj/.cuberun').createSync(recursive: true);
+    File('$proj/.cuberun/pi.yaml').writeAsStringSync(body);
+    final r = mk().resolve('pi', yaml: inline);
+    expect(r.source, HarnessSource.yaml);
+    expect(r.spec.command, ['inlined']); // chain never consulted
+  });
+
+  test('--yaml + --file fails closed naming the conflict', () {
+    final f = '${tmp.path}/override.yaml';
+    File(f).writeAsStringSync(body);
+    expect(
+      () => mk().resolve('pi', file: f, yaml: inline),
+      throwsA(
+        isA<ConfigException>().having(
+          (e) => e.message,
+          'message',
+          '--yaml and --file: give one, not both',
+        ),
+      ),
+    );
+  });
+
+  test('--yaml schema error names <inline yaml>', () {
+    expect(
+      () => mk().resolve('pi', yaml: 'apiVersion: nope\n'),
+      throwsA(
+        isA<ConfigException>().having(
+          (e) => e.message,
+          'message',
+          allOf([startsWith('<inline yaml>'), contains('apiVersion')]),
+        ),
+      ),
+    );
+  });
+
+  test('--yaml empty-ish text fails closed naming <inline yaml>', () {
+    expect(
+      () => mk().resolve('pi', yaml: ''),
+      throwsA(
+        isA<ConfigException>().having(
+          (e) => e.message,
+          'message',
+          startsWith('<inline yaml>'),
+        ),
+      ),
+    );
+  });
 }

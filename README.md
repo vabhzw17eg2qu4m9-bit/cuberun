@@ -103,6 +103,12 @@ stays out of every profile by construction), so a confined
 fail-closed (backend missing/rejecting) · otherwise the child's code
 (signal n ⇒ 128+n).
 
+## Docs & agent skill
+
+- Full manifest reference (schema, precedence, grants, E10): [docs/config.md](docs/config.md)
+- Agent skill — author, validate, launch and probe profiles: [skills/cuberun-config/SKILL.md](skills/cuberun-config/SKILL.md)
+- Install: `cp -r skills/cuberun-config ~/.pi/agent/skills/` (same for `~/.omp/agent/skills/`)
+
 ## Development
 
 ```sh

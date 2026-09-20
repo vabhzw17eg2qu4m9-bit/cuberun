@@ -1,8 +1,10 @@
-/// HarnessResolver: `--file` > project `.cuberun/` > user `~/.cuberun/` >
-/// preset (AC3). Resolution keys on the FILENAME stem, so what lists is
+/// HarnessResolver: `--yaml` (inline) > `--file` > project `.cuberun/` >
+/// user `~/.cuberun/` > preset (AC3; both flags together fail closed).
+/// Resolution keys on the FILENAME stem, so what lists is
 /// what launches even when `metadata.name` differs (E8).
 library;
 
+import 'dart:convert' show utf8;
 import 'dart:io' as io;
 
 import 'exceptions.dart';
@@ -11,6 +13,9 @@ import 'presets.dart';
 
 /// Where a harness spec came from.
 enum HarnessSource {
+  /// Explicit `--yaml` inline text (or `-` stdin).
+  yaml('inline yaml'),
+
   /// Explicit `--file` override.
   file('file'),
 
@@ -69,8 +74,19 @@ final class _Scanned {
   final String? description;
 }
 
-/// Precedence-chain resolver: `--file` > project `.cuberun/` > user
-/// `~/.cuberun/` > built-in presets (GOAL AC3).
+/// Reads a manifest from stdin to EOF (`--yaml -`); empty input fails
+/// closed. [source] is injectable for tests. Lives beside the resolver
+/// because it is the `--yaml` ingestion edge of the precedence chain.
+Future<String> readManifestStdin({Stream<List<int>>? source}) async {
+  final text = await utf8.decoder.bind(source ?? io.stdin).join();
+  if (text.trim().isEmpty) {
+    throw const ConfigException('--yaml -: stdin is empty');
+  }
+  return text;
+}
+
+/// Precedence-chain resolver: `--yaml` > `--file` > project `.cuberun/` >
+/// user `~/.cuberun/` > built-in presets (GOAL AC3).
 final class HarnessResolver {
   /// Creates a resolver rooted at [cwd]/[home].
   const HarnessResolver({required this.cwd, required this.home});
@@ -81,10 +97,14 @@ final class HarnessResolver {
   /// User home (`~/.cuberun/` lives here).
   final String home;
 
-  /// Resolves [name] (or an explicit [file]) through the precedence
-  /// chain; throws [ConfigException] listing every location + presets on
-  /// a miss (AC3).
-  ResolvedHarness resolve(String name, {String? file}) {
+  /// Resolves [name] (or an explicit [yaml] / [file]) through the
+  /// precedence chain; throws [ConfigException] listing every location +
+  /// presets on a miss (AC3). `--yaml` beats `--file`; both given is a
+  /// fail-closed conflict.
+  ResolvedHarness resolve(String name, {String? file, String? yaml}) {
+    if (yaml != null) {
+      return _resolveInline(yaml, file);
+    }
     if (file != null) {
       final f = io.File(file);
       if (!f.existsSync()) {
@@ -122,6 +142,20 @@ final class HarnessResolver {
       "profile '$name' not found — looked: --file (none), "
       '${project.path}, ${user.path}, '
       'presets(${HarnessPresets.ids.join(', ')})',
+    );
+  }
+
+  /// Inline `--yaml` manifest: strict parse with no filename, so schema
+  /// errors name `<inline yaml>` and the spec keys on `metadata.name`
+  /// (no stem). `--file` alongside it is rejected, never silently
+  /// dropped.
+  ResolvedHarness _resolveInline(String yaml, String? file) {
+    if (file != null) {
+      throw const ConfigException('--yaml and --file: give one, not both');
+    }
+    return ResolvedHarness(
+      spec: HarnessSpec.fromYamlText(yaml, sourcePath: '<inline yaml>'),
+      source: HarnessSource.yaml,
     );
   }
 

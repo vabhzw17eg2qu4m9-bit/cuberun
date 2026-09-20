@@ -25,18 +25,20 @@ const String _usage =
 cuberun $kCuberunVersion — kernel-confined launcher for AI harnesses
 
 Usage:
-  cuberun run <profile> [--file <f>] [--use-<service>]... [-- <command…>]
+  cuberun run <profile> [--file <f> | --yaml <text|->] [--use-<service>]... [-- <command…>]
       Launch a command (default: the profile's own) inside the Layer-0
       kernel profile. Service grants: --use-github, --use-gitlab, --use-nvm.
+      --yaml passes the manifest inline ('-' reads stdin); --yaml + --file
+      together is an error.
   cuberun list
       Enumerate profiles: presets + project .cuberun/ + user ~/.cuberun/.
-  cuberun show <profile> [--file <f>] [--use-<service>]...
+  cuberun show <profile> [--file <f> | --yaml <text|->] [--use-<service>]...
       Show resolved grants (rw / ro / denied banner).
-  cuberun sbpl <profile> [--file <f>] [--use-<service>]...
+  cuberun sbpl <profile> [--file <f> | --yaml <text|->] [--use-<service>]...
       Print the exact deterministic kernel profile text.
   cuberun new <name> --command <cmd> --agent-root <path>
       Scaffold .cuberun/<name>.yaml (strict round-trip verified).
-  cuberun probe <profile> [--file <f>] [--use-<service>]...
+  cuberun probe <profile> [--file <f> | --yaml <text|->] [--use-<service>]...
       Self-check confinement FROM INSIDE the profile; exit 0/1.
 
 Env knobs:
@@ -74,9 +76,9 @@ Future<int> runCli(
       case 'list':
         return _cmdList(out);
       case 'show':
-        return _cmdShow(rest, out, err);
+        return await _cmdShow(rest, out, err);
       case 'sbpl':
-        return _cmdSbpl(rest, out, err);
+        return await _cmdSbpl(rest, out, err);
       case 'new':
         return _cmdNew(rest, out, err);
       case 'probe':
@@ -99,21 +101,32 @@ Future<int> runCli(
 // ---------------------------------------------------------------------------
 
 final class _Opts {
-  _Opts(this.positional, this.file, this.services, this.command, this.flags);
+  _Opts(
+    this.positional,
+    this.file,
+    this.yaml,
+    this.services,
+    this.command,
+    this.flags,
+  );
 
   final List<String> positional;
   String? file;
+
+  /// `--yaml` value: manifest TEXT, or `-` (read stdin to EOF).
+  String? yaml;
   Set<String> services = <String>{};
   List<String> command; // after `--` (empty = profile default)
   Map<String, String> flags; // --flag value / --bool
 }
 
-/// Scans verb args: positional words, `--file <f>`, `--use-<x>…`,
-/// `--key <value>` pairs, and everything after a bare `--`.
+/// Scans verb args: positional words, `--file <f>`, `--yaml <text|->`,
+/// `--use-<x>…`, `--key <value>` pairs, and everything after a bare `--`.
 _Opts _scanOpts(List<String> args, Set<String> valueFlags) {
   final positional = <String>[];
   final flags = <String, String>{};
   String? file;
+  String? yaml;
   final services = <String>{};
   var command = <String>[];
   var i = 0;
@@ -134,6 +147,15 @@ _Opts _scanOpts(List<String> args, Set<String> valueFlags) {
       file = args[++i];
       continue;
     }
+    if (a == '--yaml') {
+      if (i + 1 >= args.length) {
+        throw const ConfigException(
+          '--yaml: requires a manifest (yaml text, or - for stdin)',
+        );
+      }
+      yaml = args[++i];
+      continue;
+    }
     if (a.startsWith('--') && valueFlags.contains(a.substring(2))) {
       if (i + 1 >= args.length) {
         throw ConfigException('$a: requires a value');
@@ -146,22 +168,26 @@ _Opts _scanOpts(List<String> args, Set<String> valueFlags) {
     }
     positional.add(a);
   }
-  return _Opts(positional, file, services, command, flags);
+  return _Opts(positional, file, yaml, services, command, flags);
 }
 
-({ResolvedHarness resolved, HarnessRuntime runtime}) _resolveForRun(
+Future<({ResolvedHarness resolved, HarnessRuntime runtime})> _resolveForRun(
   _Opts opts,
   String verb,
-) {
+) async {
   if (opts.positional.isEmpty) {
     throw ConfigException('$verb <profile>: profile name required');
+  }
+  var yaml = opts.yaml;
+  if (yaml == '-') {
+    yaml = await readManifestStdin();
   }
   final cwd = io.Directory.current.path;
   final home = io.Platform.environment['HOME'] ?? '/';
   final resolved = HarnessResolver(
     cwd: cwd,
     home: home,
-  ).resolve(opts.positional.first, file: opts.file);
+  ).resolve(opts.positional.first, file: opts.file, yaml: yaml);
   final runtime = resolveRuntime(
     resolved.spec,
     services: opts.services,
@@ -183,7 +209,7 @@ void _printWarnings(HarnessRuntime rt, void Function(String) err) {
 
 Future<int> _cmdRun(List<String> args, void Function(String) err) async {
   final opts = _scanOpts(args, const {});
-  final r = _resolveForRun(opts, 'run');
+  final r = await _resolveForRun(opts, 'run');
   final resolved = r.resolved;
   final runtime = r.runtime;
 
@@ -229,26 +255,26 @@ int _cmdList(void Function(String) out) {
   return 0;
 }
 
-int _cmdShow(
+Future<int> _cmdShow(
   List<String> args,
   void Function(String) out,
   void Function(String) err,
-) {
+) async {
   final opts = _scanOpts(args, const {});
-  final r = _resolveForRun(opts, 'show');
+  final r = await _resolveForRun(opts, 'show');
   final runtime = r.runtime;
   final profile = emitProfile(runtime);
   _banner(r.resolved, runtime, profile.key10, null, out);
   return 0;
 }
 
-int _cmdSbpl(
+Future<int> _cmdSbpl(
   List<String> args,
   void Function(String) out,
   void Function(String) err,
-) {
+) async {
   final opts = _scanOpts(args, const {});
-  final r = _resolveForRun(opts, 'sbpl');
+  final r = await _resolveForRun(opts, 'sbpl');
   _printWarnings(r.runtime, err);
   io.stdout.write(emitProfile(r.runtime).text);
   return 0;
@@ -287,7 +313,7 @@ Future<int> _cmdProbe(
   void Function(String) err,
 ) async {
   final opts = _scanOpts(args, const {});
-  final r = _resolveForRun(opts, 'probe');
+  final r = await _resolveForRun(opts, 'probe');
   final runtime = r.runtime;
 
   final check = await preflightBackend();
@@ -332,8 +358,8 @@ void _banner(
   String? profilePath,
   void Function(String) sink,
 ) {
-  final src = resolved.source == HarnessSource.preset
-      ? 'preset'
+  final src = resolved.path == null
+      ? resolved.source.label
       : '${resolved.source.label} (${resolved.path})';
   sink(
     '⛨ ${resolved.spec.name} under cube-harness sandbox '
