@@ -18,7 +18,7 @@ import 'sbpl.dart';
 import 'stage.dart';
 
 /// cuberun version (kept in one place for `--version` and CI smoke).
-const String kCuberunVersion = '0.1.0';
+const String kCuberunVersion = '0.1.1';
 
 const String _usage =
     '''
