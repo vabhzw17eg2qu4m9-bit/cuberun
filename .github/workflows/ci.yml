@@ -79,6 +79,7 @@ jobs:
           sdk: stable
       - run: dart pub get
       - name: compile single static binary
+        run: |
           mkdir -p build
           dart compile exe bin/cuberun.dart -o build/cuberun-macos-arm64
       - name: binary smoke (--version, list, sbpl fa, probe fa)
