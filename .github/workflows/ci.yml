@@ -21,6 +21,7 @@ jobs:
       - uses: dart-lang/setup-dart@v1
         with:
           sdk: stable
+      - run: dart pub get
       - run: dart format --set-exit-if-changed .
       - run: dart analyze --fatal-infos
 
@@ -43,6 +44,12 @@ jobs:
 
   integration:
     runs-on: macos-15
+    # gh create-verb legs (AC12) open scratch issues/PRs/branches in THIS
+    # repo with the workflow token, then tear them down.
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
       - uses: dart-lang/setup-dart@v1
