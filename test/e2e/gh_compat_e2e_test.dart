@@ -266,6 +266,24 @@ void main() {
         environment: env,
       );
       prs.addAll(_prNumbers(base.stdout as String));
+
+      // CI workflow tokens are frequently barred from creating PRs by
+      // repo/org Actions policy. When the UNCONFINED baseline itself
+      // fails with that capability error, confined==unconfined is
+      // unanswerable here: skip LOUDLY (never silently green). Any other
+      // baseline failure is a real failure and stays red.
+      final baseOut = '${base.stdout}${base.stderr}';
+      if (base.exitCode != 0 &&
+          baseOut.contains(
+            'GitHub Actions is not permitted to create or approve pull requests',
+          )) {
+        markTestSkipped(
+          'workflow token cannot create PRs — repo Actions policy '
+          '("GitHub Actions is not permitted to create or approve pull '
+          'requests"); run locally with a PAT to exercise this leg',
+        );
+        return;
+      }
       final conf = h.runCuberun(
         ['run', 'fa', '--use-github', '--', 'gh', ...prArgs(branchConf)],
         cwd: proj.path,

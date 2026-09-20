@@ -34,6 +34,7 @@ integration:
 
 build:
     dart pub get
+    mkdir -p build
     dart compile exe bin/cuberun.dart -o build/cuberun-macos-arm64
 
 # Everything CI runs, in order.
