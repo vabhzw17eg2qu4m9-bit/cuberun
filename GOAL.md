@@ -1,6 +1,6 @@
-# GOAL — cuberun (v1, initial card)
+# GOAL — cuberun (v2, adds --use service grants)
 
-## Goal — cuberun (v1, first draft)
+## Goal — cuberun (v2, adds --use service grants)
 
 One sentence: **Every launch of a supported AI harness on this machine
 (pi / omp / fa) becomes kernel-confined by default** — one compiled Dart
@@ -33,6 +33,11 @@ and makes a new confined harness a YAML file instead of a fork.
   already exist.
 - NOT retracted: the two-layer model. Layer 0 (this launcher) stays
   permissive enough for a harness to live; L1+ cubes stay narrow.
+- **Pinned principle (v2):** NO command denylists anywhere, ever — not
+  for services, not for profiles. `--use-<service>` GRANTS FOLDERS, it
+  never forbids commands: with the kernel folder restrictions in place,
+  no command is dangerous — it simply cannot reach anything outside its
+  grants (owner's exact reasoning, keep it verbatim in spirit).
 
 ## Architecture
 
@@ -49,6 +54,10 @@ cuberun run pi
   │
   ├─ HarnessPresets ────► pi | omp | fa     (manifest TEXT parsed by the
   │                                            same parser — no drift)
+  ├─ ServiceGrants ─────► --use-github …    (folder grants appended to the
+  │                                            resolved runtime: read-only
+  │                                            configs, rw caches — unions,
+  │                                            dedup, part of key10)
   ├─ HarnessRuntime ────► resolved facts    (cwd, agentRoot+env+widen,
   │                                            realpath($TMPDIR), env knobs,
   │                                            runtime dirs from PATH+shebang)
@@ -78,6 +87,10 @@ Invariants:
   only; the child's env is inherited, never logged.
 - **Signal faithfulness:** child killed by signal n ⇒ launcher exits
   `128 + n` (POSIX; the PoC's hard-coded 143 is generalized).
+- **Grants, never gates (v2):** `--use-<service>` layers folder grants
+  into the SAME deterministic pipeline (union + dedup, flag set included
+  in `key10`); cuberun never inspects, allows or forbids commands — the
+  kernel folder boundary is the only gate.
 
 ## Capability surface (everything the platform allows → our shape)
 
@@ -95,6 +108,7 @@ macOS `sandbox-exec` (SBPL) + Dart `dart compile exe`.
 | relocate state dir | `agentRootEnv` per profile | `PI_CODING_AGENT_DIR`, `OMP_AGENT_DIR`; fa has none upstream yet |
 | widen a dot-dir root | `widenToDotParent` | `~/.pi/agent` → `~/.pi` (skills/themes live next to state) |
 | ad-hoc grants | `CUBERUN_EXTRA_READ` / `CUBERUN_EXTRA_WRITE` | colon-separated, `~` ok, appended to manifest grants |
+| service folders grant | `cuberun run pi --use-github --use-gitlab` | unions the services' folder grants into the profile (see Service grants) |
 
 ### Profile manifests (subject: the YAML document)
 
@@ -116,6 +130,35 @@ YAML path — same discipline as flutter_agent_harness `.fah/cubes`.
 - **excluded (with rationale):** Windows/job-object backend (no host);
   managing harness installs/updates (not a launcher's job); per-command
   allowlists inside cuberun (that is fa's cube layer — see Non-goals).
+
+### Service grants (subject: each service's state folders)
+
+`--use-<service>` appends that service's folder grants to the resolved
+profile BEFORE the SBPL emit — read-only for configs/credentials the
+service reads, rw only for its caches. Deterministic: the flag SET is
+part of the content key. Composition: multiple `--use-*` flags union
+and dedup. Unknown service is a LOUD `ConfigException` listing the
+catalog — never a silent ignore (fail-closed). And by the pinned
+principle above: services grant FOLDERS, they never touch commands —
+a confined `gh`, `glab`, `npm` or anything else simply cannot reach
+anything outside the union of grants.
+
+- **core (this card):**
+  - `--use-github` — ro: `~/.config/gh` (hosts.yml token, works without
+    the Keychain), `~/.gitconfig` (identity + gh credential helper).
+  - `--use-gitlab` — ro: `~/.config/glab`, `~/.gitconfig` (dedup with
+    `--use-github`).
+- **second tier (opt-in, follow-up):** `--use-npm` (ro `~/.npm`),
+  `--use-pub` (rw `~/.pub-cache`), `--use-uv` (rw `~/.cache/uv`,
+  `~/.local/share/uv`), `--use-cargo` (rw `~/.cargo`),
+  `--use-pip` (ro `~/.config/pip`); user-defined service snippets
+  `~/.cuberun/services/<name>.yaml` parsed through the same strict
+  parser (resolution: project > user > built-in catalog).
+- **excluded (with rationale):** `--use-ssh` and ANY grant touching
+  `~/.ssh`, `~/.gnupg` or the login Keychain — never offered in the
+  catalog and impossible-by-construction from user snippets (path
+  blocklist, E10); `--use-docker` (the docker socket equals root on
+  this host class).
 
 ### Distribution (subject: the binary)
 
@@ -160,6 +203,17 @@ YAML path — same discipline as flutter_agent_harness `.fah/cubes`.
 - **AC9** — gates green: `dart format --set-exit-if-changed`,
   `dart analyze --fatal-infos`, `dart test --exclude-tags integration`
   all pass on the macOS arm64 CI runner.
+- **AC10** — service grants: `--use-github` adds EXACTLY the cataloged
+  grants (read-allows for `~/.config/gh` + `~/.gitconfig`, no
+  write-allows) and changes `key10`; `--use-gitlab` ∪ `--use-github`
+  dedups `~/.gitconfig`; an unknown `--use-x` is a loud
+  `ConfigException` listing the catalog (UT). E2E: with `--use-github`
+  the gh config is READABLE, still NOT writable, the rest of `$HOME`
+  stays denied (probe variant green).
+- **AC11** — grant safety: no `--use-*` path (built-in or user snippet)
+  can ever emit an allow touching `~/.ssh`, `~/.gnupg` or keychain
+  files — rejected at resolve, asserted by a REG byte-scan of all
+  emitted profiles (E10).
 
 ## Test plan
 
@@ -167,18 +221,23 @@ YAML path — same discipline as flutter_agent_harness `.fah/cubes`.
 
 - `UT-*` pure, no IO: strict-parse table (AC1), presets (AC2), SBPL
   emit/determinism/order/both-spellings (AC4, E1, E2), exit mapping
-  (AC7), path sanitation (E4).
+  (AC7), path sanitation (E4), service-grant catalog — exact folders,
+  union/dedup, unknown-service failure, key10 sensitivity (AC10).
 - `IT-*` real temp dirs: resolver precedence + loud failures (AC3),
   content-addressed staging / no-rewrite (AC8, E7), scaffold round-trip.
 - `E2E-*` real host, macOS arm64 only, tagged `integration` (skipped
   with reason elsewhere): preflight injections (AC5), full probe +
-  negative control (AC6), binary smoke (`--version`, `list`, `sbpl`,
-  `probe`) in CI's build job.
+  negative control (AC6), `--use-github` read-only grant variant
+  (AC10), binary smoke (`--version`, `list`, `sbpl`, `probe`) in CI's
+  build job.
 - `REG-*` regression guards: SBPL text of all three presets asserted
   against pinned expectations (deny roots, metadata re-allows, grant
   lines) — a diff in preset confinement is a RED build even when all
   behavior tests stay green; staged `.sb` byte-scan proves NO secret
-  patterns (env values, tokens) ever enter the profile.
+  patterns (env values, tokens) ever enter the profile; the
+  service-grant CATALOG is pinned — a folder list change without a GOAL
+  revision is a red build; and no profile for ANY flag combination
+  contains an allow for ssh/gnupg/keychain paths (AC11, E10).
 
 CI wiring (GitHub Actions, `macos-15` arm64 only, single `ci.yml`):
 jobs `analyze` / `test` / `integration` / `build` as in Distribution.
@@ -216,6 +275,21 @@ Merge rule: **a red `integration` or `build` job blocks merge even when
 - **E8 — profile file with mismatched `metadata.name`** vs filename:
   resolution keys on the FILENAME stem; listings display under the same
   stem so what lists is what launches.
+- **E9 — service-grant composition.** Repeated flags, `--use-github` ∪
+  `--use-gitlab`, and env-knob appends must union and DEDUP (duplicate
+  subpath rules are harmless to the kernel but break determinism
+  guarantees); flag order must never change the emitted text (UT).
+  An unknown `--use-<x>` fails closed with the catalog listed — a typo
+  must never degrade to "no grant".
+- **E10 — ungrantable paths.** `~/.ssh`, `~/.gnupg`, `~/Library/
+  Keychains` (and their `/private` spellings) are rejected at resolve
+  from every DECLARATIVE source — built-in catalog, user service
+  snippets, manifest `extraRead`/`extraWrite` —
+  impossible-by-construction; REG byte-scans every emitted profile for
+  those allow lines. The single escape hatch is the human-typed
+  `CUBERUN_EXTRA_READ` env knob (operator's explicit decision): it is
+  honored but NEVER silent — `run`/`show` print a loud ⚠ banner naming
+  the blocklisted path it carries.
 
 ## Non-goals
 
