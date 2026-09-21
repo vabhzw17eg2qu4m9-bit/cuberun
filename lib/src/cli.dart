@@ -19,7 +19,7 @@ import 'sbpl.dart';
 import 'stage.dart';
 
 /// cube-sandbox version (kept in one place for `--version` and CI smoke).
-const String kCubeSandboxVersion = '0.2.0';
+const String kCubeSandboxVersion = '0.2.1';
 
 const String _usage =
     '''
