@@ -8,6 +8,7 @@ library;
 import 'dart:io' as io;
 
 import 'exceptions.dart';
+import 'launch_argv.dart';
 import 'launcher.dart';
 import 'preflight.dart';
 import 'probe.dart';
@@ -25,11 +26,14 @@ const String _usage =
 cube-sandbox $kCubeSandboxVersion — kernel-confined launcher for AI harnesses
 
 Usage:
-  cube-sandbox launch <profile> [--file <f> | --yaml <text|->] [--use-<service>]... [-- <command…>]
+  cube-sandbox launch [options] <profile> [args…] [-- <command…>]
       Launch a command (default: the profile's own) inside the Layer-0
-      kernel profile. Service grants: --use-github, --use-gitlab, --use-nvm.
-      --yaml passes the manifest inline ('-' reads stdin); --yaml + --file
-      together is an error.
+      kernel profile. Options (--file/--yaml/--use-*) precede the
+      profile; everything AFTER it is the harness's argv, forwarded
+      verbatim (order preserved). Service grants: --use-github,
+      --use-gitlab, --use-nvm. --yaml passes the manifest inline
+      ('-' reads stdin); --yaml + --file together is an error.
+      `-- <command…>` overrides the harness command.
   cube-sandbox list
       Enumerate profiles: presets + project .cube-sandbox/ + user ~/.cube-sandbox/.
   cube-sandbox show <profile> [--file <f> | --yaml <text|->] [--use-<service>]...
@@ -208,7 +212,8 @@ void _printWarnings(HarnessRuntime rt, void Function(String) err) {
 // ---------------------------------------------------------------------------
 
 Future<int> _cmdLaunch(List<String> args, void Function(String) err) async {
-  final opts = _scanOpts(args, const {});
+  final split = splitLaunchArgv(args);
+  final opts = _scanOpts(split.args, const {});
   final r = await _resolveForRun(opts, 'launch');
   final resolved = r.resolved;
   final runtime = r.runtime;
@@ -240,7 +245,7 @@ Future<int> _cmdLaunch(List<String> args, void Function(String) err) async {
   _banner(resolved, runtime, profile.key10, profilePath, err);
   return launchConfined(
     profilePath: profilePath,
-    command: command,
+    command: [...command, ...split.tail],
     onFailClosed: err,
   );
 }

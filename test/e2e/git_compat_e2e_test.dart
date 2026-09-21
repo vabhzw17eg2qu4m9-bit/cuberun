@@ -547,7 +547,7 @@ h.RunOut _plain(List<String> args, String cwd, Map<String, String> env) {
 
 h.RunOut _confinedGit(List<String> args, String cwd, String profile) {
   return h.launchCubeSandbox(
-    ['launch', profile, '--use-github', '--', 'git', ...args],
+    ['launch', '--use-github', profile, '--', 'git', ...args],
     cwd: cwd,
     env: gitEnv,
   );

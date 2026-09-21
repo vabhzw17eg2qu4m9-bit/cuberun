@@ -110,8 +110,8 @@ void main() {
               final out = h.launchCubeSandbox(
                 [
                   'launch',
-                  harness,
                   ...t.services,
+                  harness,
                   '--',
                   ...headless(harness, t.prompt(server.port)),
                 ],

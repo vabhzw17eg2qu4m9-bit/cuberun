@@ -86,7 +86,7 @@ void main() {
         );
         for (final profile in _profiles) {
           final conf = h.launchCubeSandbox(
-            ['launch', profile, '--use-github', '--', 'gh', ...full],
+            ['launch', '--use-github', profile, '--', 'gh', ...full],
             cwd: proj.path,
             env: env,
           );
@@ -145,7 +145,7 @@ void main() {
       );
       created.addAll(_issueNumbers(base.stdout as String));
       final conf = h.launchCubeSandbox(
-        ['launch', 'fa', '--use-github', '--', 'gh', ...args],
+        ['launch', '--use-github', 'fa', '--', 'gh', ...args],
         cwd: proj.path,
         env: env,
       );
@@ -287,7 +287,7 @@ void main() {
         return;
       }
       final conf = h.launchCubeSandbox(
-        ['launch', 'fa', '--use-github', '--', 'gh', ...prArgs(branchConf)],
+        ['launch', '--use-github', 'fa', '--', 'gh', ...prArgs(branchConf)],
         cwd: proj.path,
         env: env,
       );
