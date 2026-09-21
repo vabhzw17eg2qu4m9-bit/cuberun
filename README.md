@@ -1,4 +1,4 @@
-# cuberun
+# cube-sandbox
 
 [![CI](https://github.com/vabhzw17eg2qu4m9-bit/cuberun/actions/workflows/ci.yml/badge.svg)](https://github.com/vabhzw17eg2qu4m9-bit/cuberun/actions/workflows/ci.yml)
 [![release](https://img.shields.io/github/v/release/vabhzw17eg2qu4m9-bit/cuberun)](https://github.com/vabhzw17eg2qu4m9-bit/cuberun/releases/latest)
@@ -9,7 +9,7 @@
 **Every launch of a supported AI harness on this machine (pi / omp / fa)
 becomes kernel-confined by default.**
 
-One compiled Dart binary, `cuberun <harness>`, wraps the harness's entire
+One compiled Dart binary, `cube-sandbox <harness>`, wraps the harness's entire
 process tree in a Layer-0 `sandbox-exec` profile resolved from a strict
 yaml manifest — builtin tools, spawned shells, MCP servers, everything
 the harness ever does is born inside the kernel boundary. Extensions
@@ -17,20 +17,20 @@ cannot do this (they load after the agent starts); the launcher is the
 only seam that confines everything.
 
 ```
-cuberun run pi                     # launch pi confined
-cuberun run pi --use-github        # + gh config/git identity (read-only)
-cuberun run fa -- git status       # confine an arbitrary command
-cuberun list                       # presets + project + user profiles
-cuberun show pi                    # rw/ro/denied banner
-cuberun sbpl pi                    # exact deterministic profile text
-cuberun new myh --command myh --agent-root ~/.myh
-cuberun probe pi                   # self-checks FROM INSIDE the profile
+cube-sandbox launch pi                     # launch pi confined
+cube-sandbox launch pi --use-github        # + gh config/git identity (read-only)
+cube-sandbox launch fa -- git status       # confine an arbitrary command
+cube-sandbox list                       # presets + project + user profiles
+cube-sandbox show pi                    # rw/ro/denied banner
+cube-sandbox sbpl pi                    # exact deterministic profile text
+cube-sandbox new myh --command myh --agent-root ~/.myh
+cube-sandbox probe pi                   # self-checks FROM INSIDE the profile
 ```
 
 ## Confinement model (Layer 0)
 
 - **Writes deny-by-default** — allowed only for: the project dir, the
-  harness state root, `realpath($TMPDIR)`, `CUBERUN_EXTRA_WRITE` grants,
+  harness state root, `realpath($TMPDIR)`, `CUBE_SANDBOX_EXTRA_WRITE` grants,
   `/dev/null`, `/dev/fd`.
 - **Reads of user data denied** — curated deny roots (`/Users`,
   `/private/var`, `/Volumes`, `/Network`, `/home`, `/net`, BOTH macOS
@@ -43,13 +43,13 @@ cuberun probe pi                   # self-checks FROM INSIDE the profile
 - **Fail-closed** — missing/rejecting backend means the command does NOT
   run unconfined: exit 126 + diagnostic.
 - **Signal faithfulness** — child killed by signal n ⇒ exit `128 + n`.
-- **Grants, never gates** — cuberun never inspects, allows or forbids
+- **Grants, never gates** — cube-sandbox never inspects, allows or forbids
   commands; the kernel folder boundary is the only gate.
 
 ## Profiles
 
 ```yaml
-apiVersion: cuberun/v1
+apiVersion: cube-sandbox/v1
 kind: Harness
 metadata:
   name: pi
@@ -64,7 +64,7 @@ spec:
 ```
 
 Strict parse: any unknown key at any level fails naming the YAML path.
-Resolution: `--file` > `<cwd>/.cuberun/<name>.yaml` > `~/.cuberun/` >
+Resolution: `--file` > `<cwd>/.cube-sandbox/<name>.yaml` > `~/.cube-sandbox/` >
 preset. Built-in presets: `fa` (`~/.fah`), `omp` (`~/.omp`),
 `pi` (`~/.pi`, widened) — parsed by the same parser as user files.
 
@@ -81,7 +81,7 @@ Unknown `--use-x` fails closed listing the catalog. **Never grantable**:
 `~/.ssh`, `~/.gnupg`, `~/Library/Keychains` — rejected from every
 declarative source (impossible-by-construction, asserted by REG
 byte-scans). The single operator escape hatch is the human-typed
-`CUBERUN_EXTRA_READ` env knob: honored, never silent (loud ⚠ banner).
+`CUBE_SANDBOX_EXTRA_READ` env knob: honored, never silent (loud ⚠ banner).
 
 **Git remotes under confinement**: **https** remotes work for public
 repos as-is; **private** https remotes need `--use-github` so the gh
@@ -93,8 +93,8 @@ stays out of every profile by construction), so a confined
 
 ## Env knobs
 
-- `CUBERUN_EXTRA_READ` — colon-separated read-only grants (`~` ok)
-- `CUBERUN_EXTRA_WRITE` — colon-separated read-write grants; blocklisted
+- `CUBE_SANDBOX_EXTRA_READ` — colon-separated read-only grants (`~` ok)
+- `CUBE_SANDBOX_EXTRA_WRITE` — colon-separated read-write grants; blocklisted
   paths are rejected outright
 
 ## Exit codes
@@ -106,8 +106,8 @@ fail-closed (backend missing/rejecting) · otherwise the child's code
 ## Docs & agent skill
 
 - Full manifest reference (schema, precedence, grants, E10): [docs/config.md](docs/config.md)
-- Agent skill — author, validate, launch and probe profiles: [skills/cuberun-config/SKILL.md](skills/cuberun-config/SKILL.md)
-- Install: `cp -r skills/cuberun-config ~/.pi/agent/skills/` (same for `~/.omp/agent/skills/`)
+- Agent skill — author, validate, launch and probe profiles: [skills/cube-sandbox-config/SKILL.md](skills/cube-sandbox-config/SKILL.md)
+- Install: `cp -r skills/cube-sandbox-config ~/.pi/agent/skills/` (same for `~/.omp/agent/skills/`)
 
 ## Development
 
@@ -123,4 +123,4 @@ even when `test` is green. Harness suites skip with an explicit reason
 when provider env is absent — skipped and failed are different colors.
 
 Installing (human/CI action; the agent's own dev cube denies
-`~/.local/bin`): `just build && cp build/cuberun-macos-arm64 ~/.local/bin/cuberun`.
+`~/.local/bin`): `just build && cp build/cube-sandbox-macos-arm64 ~/.local/bin/cube-sandbox`.

@@ -9,17 +9,17 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io' as io;
 
-import 'package:cuberun/src/preflight.dart';
-import 'package:cuberun/src/probe.dart';
-import 'package:cuberun/src/runtime.dart';
-import 'package:cuberun/src/stage.dart';
+import 'package:cube_sandbox/src/preflight.dart';
+import 'package:cube_sandbox/src/probe.dart';
+import 'package:cube_sandbox/src/runtime.dart';
+import 'package:cube_sandbox/src/stage.dart';
 import 'package:test/test.dart';
 
 /// Marker substrings identifying each probe script, in execution order.
 const _markers = [
-  '.cuberun-probe-escape',
-  '.cuberun-probe-inside',
-  '.cuberun-probe-secret',
+  '.cube-sandbox-probe-escape',
+  '.cube-sandbox-probe-inside',
+  '.cube-sandbox-probe-secret',
   'echo ls=',
   'touch',
   'rw-ok',
@@ -39,21 +39,21 @@ const _checkNames = [
 /// The happy-path child: every confined operation behaves as a correct
 /// kernel-enforced sandbox would (denied outside grants, allowed inside).
 Future<CommandOutcome> _canned(String script) async {
-  if (script.contains('.cuberun-probe-escape')) {
+  if (script.contains('.cube-sandbox-probe-escape')) {
     return const CommandOutcome(
       exitCode: 1,
       stdout: '',
       stderr: 'operation not permitted',
     );
   }
-  if (script.contains('.cuberun-probe-inside')) {
+  if (script.contains('.cube-sandbox-probe-inside')) {
     return const CommandOutcome(exitCode: 0, stdout: 'ok\n', stderr: '');
   }
   if (script.contains('touch')) {
     // Check 4 (read grant): read succeeds, the touch is a no-op.
     return const CommandOutcome(exitCode: 0, stdout: 'secret\n', stderr: '');
   }
-  if (script.contains('.cuberun-probe-secret')) {
+  if (script.contains('.cube-sandbox-probe-secret')) {
     // Check 3: flag unread, w unwritten, only the trailing echo survives.
     return const CommandOutcome(exitCode: 0, stdout: 'done\n', stderr: '');
   }
@@ -86,7 +86,7 @@ void main() {
   late String home;
 
   setUp(() async {
-    root = await io.Directory.systemTemp.createTemp('cuberun-probe-ut-');
+    root = await io.Directory.systemTemp.createTemp('cube-sandbox-probe-ut-');
     proj = '${root.path}/proj';
     home = '${root.path}/home';
     io.Directory(proj).createSync(recursive: true);
@@ -134,7 +134,7 @@ void main() {
 
   test('escape write permitted => write-outside check fails only', () async {
     final report = await run(
-      (script) => script.contains('.cuberun-probe-escape')
+      (script) => script.contains('.cube-sandbox-probe-escape')
           ? const CommandOutcome(exitCode: 0, stdout: '', stderr: '')
           : _canned(script),
     );
@@ -147,7 +147,7 @@ void main() {
 
   test('negative control: leaky HOME trips the read AND write check', () async {
     final report = await run((script) async {
-      if (script.contains('.cuberun-probe-secret') &&
+      if (script.contains('.cube-sandbox-probe-secret') &&
           !script.contains('touch')) {
         // Simulate a sabotaged profile: the child reads the flag AND
         // really writes through the denied root.

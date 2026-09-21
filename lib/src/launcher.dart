@@ -10,7 +10,7 @@ import 'dart:io' as io;
 int mapChildExit(int exitCode) => exitCode < 0 ? 128 - exitCode : exitCode;
 
 /// Spawns the confined child with inherited stdio; NEVER throws — returns
-/// the exit code cuberun itself should exit with (126 on spawn failure).
+/// the exit code cube-sandbox itself should exit with (126 on spawn failure).
 Future<int> launchConfined({
   required String profilePath,
   required List<String> command,

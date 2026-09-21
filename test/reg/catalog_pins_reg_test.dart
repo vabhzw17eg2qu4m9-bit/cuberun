@@ -1,5 +1,5 @@
-import 'package:cuberun/src/service_grants.dart';
-import 'package:cuberun/src/tool_catalog.dart';
+import 'package:cube_sandbox/src/service_grants.dart';
+import 'package:cube_sandbox/src/tool_catalog.dart';
 import 'package:test/test.dart';
 
 /// REG — the catalogs are PINNED: a folder list change (service grants)

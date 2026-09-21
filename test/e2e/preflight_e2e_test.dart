@@ -1,7 +1,7 @@
 @Tags(['integration'])
 library;
 
-import 'package:cuberun/src/preflight.dart';
+import 'package:cube_sandbox/src/preflight.dart';
 import 'package:test/test.dart';
 
 /// AC5 — fail-closed preflight: non-macOS, missing binary, rejecting

@@ -1,6 +1,6 @@
-import 'package:cuberun/src/exceptions.dart';
-import 'package:cuberun/src/paths.dart';
-import 'package:cuberun/src/service_grants.dart';
+import 'package:cube_sandbox/src/exceptions.dart';
+import 'package:cube_sandbox/src/paths.dart';
+import 'package:cube_sandbox/src/service_grants.dart';
 import 'package:test/test.dart';
 
 /// E4 — path sanitation (SBPL literal injection impossible-by-construction)

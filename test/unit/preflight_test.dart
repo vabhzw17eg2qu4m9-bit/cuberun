@@ -1,6 +1,6 @@
 import 'dart:io' as io;
 
-import 'package:cuberun/src/preflight.dart';
+import 'package:cube_sandbox/src/preflight.dart';
 import 'package:test/test.dart';
 
 /// AC5 — fail-closed preflight: every exit-126 branch driven through the

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:cuberun/src/stage.dart';
+import 'package:cube_sandbox/src/stage.dart';
 import 'package:test/test.dart';
 
 /// E7 — content-addressed staging: collisions impossible by key, identical
@@ -10,7 +10,7 @@ void main() {
   late Directory tmp;
 
   setUp(() async {
-    tmp = await Directory.systemTemp.createTemp('cuberun-stage-');
+    tmp = await Directory.systemTemp.createTemp('cube-sandbox-stage-');
   });
 
   tearDown(() async {
@@ -67,6 +67,6 @@ void main() {
   });
 
   test('projectCacheDir shape', () {
-    expect(projectCacheDir('/w/proj'), '/w/proj/.cuberun/cache');
+    expect(projectCacheDir('/w/proj'), '/w/proj/.cube-sandbox/cache');
   });
 }

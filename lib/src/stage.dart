@@ -1,5 +1,5 @@
 /// ProfileStage: content-addressed staging of emitted profiles under
-/// `<projDir>/.cuberun/cache/harness-<key10>.sb` — atomic rename, and
+/// `<projDir>/.cube-sandbox/cache/harness-<key10>.sb` — atomic rename, and
 /// identical staged content is NEVER rewritten (mtime-stable, E7).
 library;
 
@@ -38,4 +38,4 @@ String stageProfile({
 }
 
 /// The per-project cache dir for staged profiles.
-String projectCacheDir(String projDir) => '$projDir/.cuberun/cache';
+String projectCacheDir(String projDir) => '$projDir/.cube-sandbox/cache';

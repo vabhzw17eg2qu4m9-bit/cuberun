@@ -1,6 +1,6 @@
-import 'package:cuberun/src/presets.dart';
-import 'package:cuberun/src/runtime.dart';
-import 'package:cuberun/src/sbpl.dart';
+import 'package:cube_sandbox/src/presets.dart';
+import 'package:cube_sandbox/src/runtime.dart';
+import 'package:cube_sandbox/src/sbpl.dart';
 import 'package:test/test.dart';
 
 /// REG — the SBPL text of all three presets is asserted against pinned

@@ -1,4 +1,4 @@
-import 'package:cuberun/src/launcher.dart';
+import 'package:cube_sandbox/src/launcher.dart';
 import 'package:test/test.dart';
 
 /// AC7 / E6 — exit faithfulness: child killed by signal n => launcher

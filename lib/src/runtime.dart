@@ -146,7 +146,7 @@ String runtimePrefix(String binDir) {
 ///
 /// Throws [ConfigException] when a DECLARATIVE source (manifest paths,
 /// service catalog, EXTRA_WRITE env knob) touches an ungrantable root
-/// (E10). `CUBERUN_EXTRA_READ` is the single operator escape hatch:
+/// (E10). `CUBE_SANDBOX_EXTRA_READ` is the single operator escape hatch:
 /// honored, never silent — it lands in `warnings`.
 HarnessRuntime resolveRuntime(
   HarnessSpec spec, {
@@ -214,7 +214,7 @@ HarnessRuntime _resolve(
     );
   }
 
-  // --- env knobs: CUBERUN_EXTRA_WRITE never blocklisted; EXTRA_READ is
+  // --- env knobs: CUBE_SANDBOX_EXTRA_WRITE never blocklisted; EXTRA_READ is
   //     the operator escape hatch — honored but never silent.
   final knobs = _resolveEnvKnobs(env, home: home);
 
@@ -230,24 +230,24 @@ HarnessRuntime _resolve(
   );
 }
 
-/// Env-knob grants (`CUBERUN_EXTRA_WRITE` / `CUBERUN_EXTRA_READ`) plus the
+/// Env-knob grants (`CUBE_SANDBOX_EXTRA_WRITE` / `CUBE_SANDBOX_EXTRA_READ`) plus the
 /// resulting operator warnings.
 ({List<String> read, List<String> write, List<String> warnings})
 _resolveEnvKnobs(Map<String?, String?> env, {required String home}) {
   final warnings = <String>[];
-  final envWrite = parseEnvPathList(env['CUBERUN_EXTRA_WRITE'], home);
+  final envWrite = parseEnvPathList(env['CUBE_SANDBOX_EXTRA_WRITE'], home);
   final writeViolations = ungrantableViolations(envWrite, home);
   if (writeViolations.isNotEmpty) {
     throw ConfigException(
-      'CUBERUN_EXTRA_WRITE carries ungrantable path(s) '
+      'CUBE_SANDBOX_EXTRA_WRITE carries ungrantable path(s) '
       '${writeViolations.join(', ')} — writes to ~/.ssh, ~/.gnupg or '
       '~/Library/Keychains are never grantable (E10)',
     );
   }
-  final envRead = parseEnvPathList(env['CUBERUN_EXTRA_READ'], home);
+  final envRead = parseEnvPathList(env['CUBE_SANDBOX_EXTRA_READ'], home);
   for (final v in ungrantableViolations(envRead, home)) {
     warnings.add(
-      'CUBERUN_EXTRA_READ carries blocklisted path $v — operator override '
+      'CUBE_SANDBOX_EXTRA_READ carries blocklisted path $v — operator override '
       'honored, NEVER silent (E10)',
     );
   }

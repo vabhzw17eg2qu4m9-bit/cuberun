@@ -1,12 +1,12 @@
-import 'package:cuberun/src/exceptions.dart';
-import 'package:cuberun/src/harness_manifest.dart';
+import 'package:cube_sandbox/src/exceptions.dart';
+import 'package:cube_sandbox/src/harness_manifest.dart';
 import 'package:test/test.dart';
 
 /// AC1 — strict parse: every schema violation throws ConfigException
 /// naming the YAML path; valid documents parse fully.
 void main() {
   const good = '''
-apiVersion: cuberun/v1
+apiVersion: cube-sandbox/v1
 kind: Harness
 metadata:
   name: pi
@@ -43,7 +43,7 @@ spec:
 
     rejects(
       'wrong apiVersion',
-      good.replaceFirst('cuberun/v1', 'cuberun/v2'),
+      good.replaceFirst('cube-sandbox/v1', 'cube-sandbox/v2'),
       contains('apiVersion'),
     );
     rejects('missing apiVersion', '''
@@ -76,7 +76,7 @@ spec:
       contains('metadata.labels'),
     );
     rejects('missing spec', '''
-apiVersion: cuberun/v1
+apiVersion: cube-sandbox/v1
 kind: Harness
 metadata:
   name: pi
@@ -87,7 +87,7 @@ metadata:
       contains('spec.quota'),
     );
     rejects('missing command', '''
-apiVersion: cuberun/v1
+apiVersion: cube-sandbox/v1
 kind: Harness
 metadata:
   name: pi
@@ -121,7 +121,7 @@ spec:
     );
     rejects(
       'agentRoot with newline (E4)',
-      'apiVersion: cuberun/v1\nkind: Harness\nmetadata:\n  name: pi\nspec:\n  command: pi\n  agentRoot: "/tmp/a\\nb"\n',
+      'apiVersion: cube-sandbox/v1\nkind: Harness\nmetadata:\n  name: pi\nspec:\n  command: pi\n  agentRoot: "/tmp/a\\nb"\n',
       contains('spec.agentRoot'),
     );
     rejects(
@@ -174,7 +174,7 @@ spec:
 
   test('command as argv list parses to argv', () {
     final spec = HarnessSpec.fromYamlText('''
-apiVersion: cuberun/v1
+apiVersion: cube-sandbox/v1
 kind: Harness
 metadata:
   name: pi

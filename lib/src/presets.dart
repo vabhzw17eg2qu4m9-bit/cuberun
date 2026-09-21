@@ -41,7 +41,7 @@ final class HarnessPresets {
 
   static const String _fa = '''
 # fa coding agent — state root ~/.fah (no agentRootEnv upstream yet).
-apiVersion: cuberun/v1
+apiVersion: cube-sandbox/v1
 kind: Harness
 metadata:
   name: fa
@@ -54,7 +54,7 @@ spec:
 
   static const String _omp = '''
 # omp launcher — state root ~/.omp (OMP_AGENT_DIR overrides).
-apiVersion: cuberun/v1
+apiVersion: cube-sandbox/v1
 kind: Harness
 metadata:
   name: omp
@@ -69,7 +69,7 @@ spec:
   static const String _pi = '''
 # pi coding agent — state dir ~/.pi/agent widened to ~/.pi
 # (skills/themes/keybindings live next to agent state).
-apiVersion: cuberun/v1
+apiVersion: cube-sandbox/v1
 kind: Harness
 metadata:
   name: pi

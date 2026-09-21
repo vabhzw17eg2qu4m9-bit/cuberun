@@ -10,7 +10,7 @@ build/
 coverage/
 
 # Staged kernel profiles (content-keyed, gitignored by design — E7)
-.cuberun/cache/
+.cube-sandbox/cache/
 
 # Scratch for E2E suites
 .cache/

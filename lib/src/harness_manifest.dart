@@ -2,7 +2,7 @@
 /// AI harness launch and the folder grants of its Layer-0 kernel profile.
 ///
 /// ```yaml
-/// apiVersion: cuberun/v1     # required, exactly 'cuberun/v1'
+/// apiVersion: cube-sandbox/v1     # required, exactly 'cube-sandbox/v1'
 /// kind: Harness              # required, exactly 'Harness'
 /// metadata:
 ///   name: pi                 # required, ^[a-z][a-z0-9-]*$
@@ -68,7 +68,7 @@ final class HarnessSpec {
   /// Harness name, `^[a-z][a-z0-9-]*$` (enforced at parse).
   final String name;
 
-  /// Optional human-readable description (shown by `cuberun list`).
+  /// Optional human-readable description (shown by `cube-sandbox list`).
   final String? description;
 
   /// Launch argv; `spec.command` as a string becomes `[command]`.
@@ -120,12 +120,12 @@ final class HarnessSpec {
     final api = node['apiVersion'];
     if (api == null) {
       throw ConfigException(
-        '$sourcePath.apiVersion: required (expected "cuberun/v1")',
+        '$sourcePath.apiVersion: required (expected "cube-sandbox/v1")',
       );
     }
-    if (api is! String || api != 'cuberun/v1') {
+    if (api is! String || api != 'cube-sandbox/v1') {
       throw ConfigException(
-        '$sourcePath.apiVersion: must be "cuberun/v1", got ${renderValue(api)}',
+        '$sourcePath.apiVersion: must be "cube-sandbox/v1", got ${renderValue(api)}',
       );
     }
 
@@ -248,13 +248,13 @@ final class HarnessSpec {
   }
 
   /// Renders this spec back to canonical manifest yaml (used by
-  /// `cuberun new`; the output must round-trip through [fromYamlText]).
+  /// `cube-sandbox new`; the output must round-trip through [fromYamlText]).
   String toYamlText() {
     final b = StringBuffer();
     b.writeln(
-      '# cuberun harness manifest — strict schema (apiVersion cuberun/v1)',
+      '# cube-sandbox harness manifest — strict schema (apiVersion cube-sandbox/v1)',
     );
-    b.writeln('apiVersion: cuberun/v1');
+    b.writeln('apiVersion: cube-sandbox/v1');
     b.writeln('kind: Harness');
     _emitMetadata(b);
     b.writeln('spec:');

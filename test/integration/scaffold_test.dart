@@ -1,18 +1,18 @@
 import 'dart:io';
 
-import 'package:cuberun/src/exceptions.dart';
-import 'package:cuberun/src/harness_manifest.dart';
-import 'package:cuberun/src/scaffold.dart';
+import 'package:cube_sandbox/src/exceptions.dart';
+import 'package:cube_sandbox/src/harness_manifest.dart';
+import 'package:cube_sandbox/src/scaffold.dart';
 import 'package:test/test.dart';
 
-/// AC8 — scaffold round-trip: `cuberun new` output parses through the
-/// strict parser and lands in `.cuberun/<name>.yaml`.
+/// AC8 — scaffold round-trip: `cube-sandbox new` output parses through the
+/// strict parser and lands in `.cube-sandbox/<name>.yaml`.
 void main() {
   late Directory tmp;
   late String proj;
 
   setUp(() async {
-    tmp = await Directory.systemTemp.createTemp('cuberun-scaffold-');
+    tmp = await Directory.systemTemp.createTemp('cube-sandbox-scaffold-');
     proj = '${tmp.path}/proj';
     await Directory(proj).create(recursive: true);
   });
@@ -21,14 +21,14 @@ void main() {
     await tmp.delete(recursive: true);
   });
 
-  test('scaffold lands in .cuberun/<name>.yaml and round-trips', () {
+  test('scaffold lands in .cube-sandbox/<name>.yaml and round-trips', () {
     final path = scaffoldProfile(
       name: 'myharness',
       command: 'myh',
       agentRoot: '~/.myh',
       projectDir: proj,
     );
-    expect(path, '$proj/.cuberun/myharness.yaml');
+    expect(path, '$proj/.cube-sandbox/myharness.yaml');
     final text = File(path).readAsStringSync();
     final spec = HarnessSpec.fromYamlText(text, sourcePath: path);
     expect(spec.name, 'myharness');
@@ -70,7 +70,7 @@ void main() {
       ),
       throwsA(isA<ConfigException>()),
     );
-    expect(File('$proj/.cuberun/Bad_Name.yaml').existsSync(), isFalse);
+    expect(File('$proj/.cube-sandbox/Bad_Name.yaml').existsSync(), isFalse);
   });
 
   test('bad agentRoot rejected (strict sanitation at scaffold time)', () {

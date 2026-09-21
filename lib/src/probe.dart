@@ -1,4 +1,4 @@
-/// `cuberun probe`: confinement self-checks run FROM INSIDE the staged
+/// `cube-sandbox probe`: confinement self-checks run FROM INSIDE the staged
 /// profile — write-outside denied, project rw works, `$HOME` read+write+
 /// listing denied outside grants, read grant read-only, write grant rw,
 /// network open (AC6). The negative control (a sabotaged profile MUST
@@ -77,14 +77,14 @@ Future<ProbeReport> probeHarness({
   runner ??= processRunner;
 
   // 1) write outside writable roots must fail.
-  final escapeFile = '$home/.cuberun-probe-escape';
+  final escapeFile = '$home/.cube-sandbox-probe-escape';
 
   // 2) write+read inside project must succeed.
-  final insideFile = '${runtime.projDir}/.cuberun-probe-inside';
+  final insideFile = '${runtime.projDir}/.cube-sandbox-probe-inside';
 
   // 3) $HOME outside every grant: plant secrets OUTSIDE every grant (the
   // launcher runs unconfined; the confined child must be denied).
-  final secretDir = '$home/.cuberun-probe-secret';
+  final secretDir = '$home/.cube-sandbox-probe-secret';
   io.Directory(secretDir).createSync(recursive: true);
   io.File('$secretDir/flag').writeAsStringSync('secret\n');
 
@@ -97,7 +97,7 @@ Future<ProbeReport> probeHarness({
   );
 
   // 5) a write grant is read+write.
-  final rwDir = '$home/.cuberun-probe-rw';
+  final rwDir = '$home/.cube-sandbox-probe-rw';
   io.Directory(rwDir).createSync(recursive: true);
   final rwProfile = emitProfile(runtime.withGrants(write: [rwDir]));
   final rwPath = stageProfile(

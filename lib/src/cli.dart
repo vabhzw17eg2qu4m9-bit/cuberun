@@ -1,4 +1,4 @@
-/// cuberun CLI: `run` · `list` · `show` · `sbpl` · `new` · `probe`.
+/// cube-sandbox CLI: `launch` · `list` · `show` · `sbpl` · `new` · `probe`.
 ///
 /// Exit codes: 0 ok · 1 probe failure · 2 config error · 64 usage ·
 /// 126 fail-closed backend/spawn · otherwise the child's own code
@@ -17,33 +17,33 @@ import 'scaffold.dart';
 import 'sbpl.dart';
 import 'stage.dart';
 
-/// cuberun version (kept in one place for `--version` and CI smoke).
-const String kCuberunVersion = '0.1.1';
+/// cube-sandbox version (kept in one place for `--version` and CI smoke).
+const String kCubeSandboxVersion = '0.2.0';
 
 const String _usage =
     '''
-cuberun $kCuberunVersion — kernel-confined launcher for AI harnesses
+cube-sandbox $kCubeSandboxVersion — kernel-confined launcher for AI harnesses
 
 Usage:
-  cuberun run <profile> [--file <f> | --yaml <text|->] [--use-<service>]... [-- <command…>]
+  cube-sandbox launch <profile> [--file <f> | --yaml <text|->] [--use-<service>]... [-- <command…>]
       Launch a command (default: the profile's own) inside the Layer-0
       kernel profile. Service grants: --use-github, --use-gitlab, --use-nvm.
       --yaml passes the manifest inline ('-' reads stdin); --yaml + --file
       together is an error.
-  cuberun list
-      Enumerate profiles: presets + project .cuberun/ + user ~/.cuberun/.
-  cuberun show <profile> [--file <f> | --yaml <text|->] [--use-<service>]...
+  cube-sandbox list
+      Enumerate profiles: presets + project .cube-sandbox/ + user ~/.cube-sandbox/.
+  cube-sandbox show <profile> [--file <f> | --yaml <text|->] [--use-<service>]...
       Show resolved grants (rw / ro / denied banner).
-  cuberun sbpl <profile> [--file <f> | --yaml <text|->] [--use-<service>]...
+  cube-sandbox sbpl <profile> [--file <f> | --yaml <text|->] [--use-<service>]...
       Print the exact deterministic kernel profile text.
-  cuberun new <name> --command <cmd> --agent-root <path>
-      Scaffold .cuberun/<name>.yaml (strict round-trip verified).
-  cuberun probe <profile> [--file <f> | --yaml <text|->] [--use-<service>]...
+  cube-sandbox new <name> --command <cmd> --agent-root <path>
+      Scaffold .cube-sandbox/<name>.yaml (strict round-trip verified).
+  cube-sandbox probe <profile> [--file <f> | --yaml <text|->] [--use-<service>]...
       Self-check confinement FROM INSIDE the profile; exit 0/1.
 
 Env knobs:
-  CUBERUN_EXTRA_READ   colon-separated read-only grants (~ ok)
-  CUBERUN_EXTRA_WRITE  colon-separated read-write grants (~ ok;
+  CUBE_SANDBOX_EXTRA_READ   colon-separated read-only grants (~ ok)
+  CUBE_SANDBOX_EXTRA_WRITE  colon-separated read-write grants (~ ok;
                        ~/.ssh / ~/.gnupg / ~/Library/Keychains NEVER)
 
 Exit codes: 0 ok · 1 probe failed · 2 config error · 64 usage ·
@@ -63,7 +63,7 @@ Future<int> runCli(
     return args.isEmpty ? 64 : 0;
   }
   if (args.contains('--version')) {
-    out('cuberun $kCuberunVersion');
+    out('cube-sandbox $kCubeSandboxVersion');
     return 0;
   }
 
@@ -71,8 +71,8 @@ Future<int> runCli(
   final rest = args.sublist(1);
   try {
     switch (verb) {
-      case 'run':
-        return await _cmdRun(rest, err);
+      case 'launch':
+        return await _cmdLaunch(rest, err);
       case 'list':
         return _cmdList(out);
       case 'show':
@@ -84,14 +84,14 @@ Future<int> runCli(
       case 'probe':
         return await _cmdProbe(rest, out, err);
       default:
-        err('cuberun: unknown verb "$verb" (see --help)');
+        err('cube-sandbox: unknown verb "$verb" (see --help)');
         return 64;
     }
   } on ConfigException catch (e) {
-    err('cuberun: $e');
+    err('cube-sandbox: $e');
     return 2;
   } on io.FileSystemException catch (e) {
-    err('cuberun: filesystem error: ${e.message} (${e.path ?? ''})');
+    err('cube-sandbox: filesystem error: ${e.message} (${e.path ?? ''})');
     return 2;
   }
 }
@@ -207,16 +207,16 @@ void _printWarnings(HarnessRuntime rt, void Function(String) err) {
 // verbs
 // ---------------------------------------------------------------------------
 
-Future<int> _cmdRun(List<String> args, void Function(String) err) async {
+Future<int> _cmdLaunch(List<String> args, void Function(String) err) async {
   final opts = _scanOpts(args, const {});
-  final r = await _resolveForRun(opts, 'run');
+  final r = await _resolveForRun(opts, 'launch');
   final resolved = r.resolved;
   final runtime = r.runtime;
 
   final check = await preflightBackend();
   if (!check.ok) {
     err(
-      'cuberun: kernel backend unavailable: ${check.detail} '
+      'cube-sandbox: kernel backend unavailable: ${check.detail} '
       '(fail closed; nothing ran)',
     );
     return 126;
@@ -233,7 +233,7 @@ Future<int> _cmdRun(List<String> args, void Function(String) err) async {
       ? opts.command
       : resolved.spec.command;
   if (command.isEmpty) {
-    err('cuberun: empty command after --');
+    err('cube-sandbox: empty command after --');
     return 126;
   }
 
@@ -319,7 +319,7 @@ Future<int> _cmdProbe(
   final check = await preflightBackend();
   if (!check.ok) {
     err(
-      'cuberun: kernel backend unavailable: ${check.detail} '
+      'cube-sandbox: kernel backend unavailable: ${check.detail} '
       '(fail closed; nothing ran)',
     );
     return 126;
@@ -362,7 +362,7 @@ void _banner(
       ? resolved.source.label
       : '${resolved.source.label} (${resolved.path})';
   sink(
-    '⛨ ${resolved.spec.name} under cube-harness sandbox '
+    '⛨ ${resolved.spec.name} under cube-sandbox '
     '(profile $key10${profilePath == null ? '' : ': $profilePath'})',
   );
   sink('   source : $src');

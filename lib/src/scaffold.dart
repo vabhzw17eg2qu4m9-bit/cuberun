@@ -1,4 +1,4 @@
-/// `cuberun new`: scaffolds `.cuberun/<name>.yaml` that MUST round-trip
+/// `cube-sandbox new`: scaffolds `.cube-sandbox/<name>.yaml` that MUST round-trip
 /// through the strict parser before landing on disk (AC8).
 library;
 
@@ -9,7 +9,7 @@ import 'harness_manifest.dart';
 import 'paths.dart';
 
 /// Renders the scaffold, parse-verifies it (round-trip proof), then writes
-/// `<projectDir>/.cuberun/<name>.yaml`. Returns the written path.
+/// `<projectDir>/.cube-sandbox/<name>.yaml`. Returns the written path.
 ///
 /// Throws [ConfigException] when [name]/[command]/[agentRoot] fail the
 /// schema or when the target file already exists.
@@ -40,7 +40,7 @@ String scaffoldProfile({
     throw ConfigException('scaffold round-trip mismatch (bug)');
   }
 
-  final dir = io.Directory('$projectDir/.cuberun');
+  final dir = io.Directory('$projectDir/.cube-sandbox');
   dir.createSync(recursive: true);
   final file = io.File('${dir.path}/$name.yaml');
   if (file.existsSync()) {
