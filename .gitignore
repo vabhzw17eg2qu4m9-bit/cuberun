@@ -24,3 +24,4 @@ coverage/
 Library/
 
 # App package: lockfile IS committed (compiled binary — reproducible CI)
+.worktrees/
