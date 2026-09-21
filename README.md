@@ -18,7 +18,8 @@ only seam that confines everything.
 
 ```
 cube-sandbox launch pi                     # launch pi confined
-cube-sandbox launch pi --use-github        # + gh config/git identity (read-only)
+cube-sandbox launch --use-github pi        # + gh config/git identity (read-only)
+cube-sandbox launch omp --resume <id>      # args after the profile go to the harness
 cube-sandbox launch fa -- git status       # confine an arbitrary command
 cube-sandbox list                       # presets + project + user profiles
 cube-sandbox show pi                    # rw/ro/denied banner

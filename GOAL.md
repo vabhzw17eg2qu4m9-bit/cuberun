@@ -115,7 +115,7 @@ macOS `sandbox-exec` (SBPL) + Dart `dart compile exe`.
 
 | platform ability | our shape | notes |
 | --- | --- | --- |
-| confine a whole process tree | `cube-sandbox launch <profile> [-- cmd…]`; `--yaml <text\|->` passes the manifest inline (stdin via `-`; with `--file` ⇒ error) | default command from the profile |
+| confine a whole process tree | `cube-sandbox launch [options] <profile> [args…] [-- cmd…]` — options precede the profile, everything after it reaches the harness verbatim (I1: byte-identical boundary); `--yaml <text\|->` passes the manifest inline (stdin via `-`; with `--file` ⇒ error) | default command from the profile |
 | enumerate profiles | `cube-sandbox list` | presets + project + user, with source labels |
 | inspect resolved grants | `cube-sandbox show <profile>` | rw/ro/denied banner |
 | inspect the exact kernel profile | `cube-sandbox sbpl <profile>` | deterministic text, no secrets |
@@ -124,7 +124,7 @@ macOS `sandbox-exec` (SBPL) + Dart `dart compile exe`.
 | relocate state dir | `agentRootEnv` per profile | `PI_CODING_AGENT_DIR`, `OMP_AGENT_DIR`; fa has none upstream yet |
 | widen a dot-dir root | `widenToDotParent` | `~/.pi/agent` → `~/.pi` (skills/themes live next to state) |
 | ad-hoc grants | `CUBE_SANDBOX_EXTRA_READ` / `CUBE_SANDBOX_EXTRA_WRITE` | colon-separated, `~` ok, appended to manifest grants |
-| service folders grant | `cube-sandbox launch pi --use-github --use-gitlab` | unions the services' folder grants into the profile (see Service grants) |
+| service folders grant | `cube-sandbox launch --use-github --use-gitlab pi` | unions the services' folder grants into the profile (see Service grants) |
 
 ### Profile manifests (subject: the YAML document)
 
