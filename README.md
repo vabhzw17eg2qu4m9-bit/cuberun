@@ -122,5 +122,26 @@ CI (`.github/workflows/ci.yml`, macos-15 arm64): `analyze` / `test` /
 even when `test` is green. Harness suites skip with an explicit reason
 when provider env is absent — skipped and failed are different colors.
 
-Installing (human/CI action; the agent's own dev cube denies
-`~/.local/bin`): `just build && cp build/cube-sandbox-macos-arm64 ~/.local/bin/cube-sandbox`.
+## Install
+
+macOS (Apple Silicon), one line:
+
+```sh
+curl -fsSL https://github.com/vabhzw17eg2qu4m9-bit/cuberun/releases/latest/download/install.sh | sh
+```
+
+Pinned version (`0.2.0` form also accepted):
+
+```sh
+curl -fsSL https://github.com/vabhzw17eg2qu4m9-bit/cuberun/releases/latest/download/install.sh | sh -s -- v0.2.0
+```
+
+| Env | Default | Purpose |
+| --- | --- | --- |
+| `CUBE_SANDBOX_INSTALL_DIR` | `~/.cube-sandbox` | install root (binary at `bin/cube-sandbox`) |
+| `CUBE_SANDBOX_VERSION` | latest release | version to install |
+| `CUBE_SANDBOX_GITHUB_TOKEN` | unset | optional auth (rate limits / private forks) |
+| `CUBE_SANDBOX_DOWNLOAD_BASE` | GitHub Releases | artifact root override (mirrors / tests) |
+
+From source: `just build && cp build/cube-sandbox-macos-arm64 ~/.local/bin/cube-sandbox`
+(human/CI action; the agent's own dev cube denies `~/.local/bin`).
