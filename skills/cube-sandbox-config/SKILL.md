@@ -79,6 +79,8 @@ parser is the law. Full reference: `docs/config.md` in the cube-sandbox repo.
    ```sh
    cube-sandbox launch <name>                  # profile's own command
    cube-sandbox launch <name> -- <cmd…>        # any command under the same boundary
+   cube-sandbox launch --use-github <name>     # service grants BEFORE the profile
+   cube-sandbox launch omp --resume <id>       # args AFTER the profile go to the harness
    ```
 5. **Probe.** `cube-sandbox probe <name>` self-checks the boundary FROM
    INSIDE the profile (writes outside grants denied, project rw works,
@@ -87,7 +89,8 @@ parser is the law. Full reference: `docs/config.md` in the cube-sandbox repo.
 6. **Service grants.** Add `--use-github` (ro `~/.config/gh`,
    `~/.gitconfig`), `--use-gitlab` (ro `~/.config/glab`,
    `~/.gitconfig`, dedups), `--use-nvm` (ro `~/.nvm`) at run time:
-   `cube-sandbox launch <name> --use-github`. Flags union + dedup; unknown
+   `cube-sandbox launch --use-github <name>` (options precede the
+   profile). Flags union + dedup; unknown
    ones fail loudly listing the catalog. To make grants permanent for a
    profile, put the folders in `extraRead`/`extraWrite` instead.
 7. **Report.** File touched, keys changed, grants added (rw vs ro),

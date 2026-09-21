@@ -43,6 +43,20 @@ Notes:
 - Built-in presets are manifest TEXT parsed by the same strict parser —
   zero preset/user drift.
 
+## Launch argv: options precede the profile
+
+`cube-sandbox launch [options] <profile> [args…] [-- <command…>]` — the
+positional split is the contract. Every cube-sandbox option (`--file`,
+`--yaml`, `--use-*`) MUST precede the profile; **everything after the
+profile is the harness's argv**, forwarded verbatim (order preserved,
+no interpretation — `launch omp --resume <id>` resumes). A `--file x`
+typed after the profile is the HARNESS's argument, not cube-sandbox's.
+`-- <command…>` keeps its override role: it replaces the harness
+command (the tail still appends after it). The boundary never changes:
+the emitted SBPL profile is byte-identical with and without a tail, and
+exit codes propagate unchanged. `show` / `sbpl` / `probe` / `new` /
+`list` stay strict: trailing options still error.
+
 ## Manifest schema
 
 ```yaml
@@ -73,7 +87,7 @@ spec:                         # required map
 | `metadata.name` | string | yes | must match `^[a-z][a-z0-9-]*$` |
 | `metadata.description` | string | no | free text; `cube-sandbox list` shows it |
 | `spec` | map | yes | only keys listed below |
-| `spec.command` | string or list | yes | string → argv `[string]` (must be non-empty). List = argv, exec'd directly — **no shell**, no quoting/interpolation; each entry a non-empty string without NUL; list may not be empty |
+| `spec.command` | string or list | yes | string → argv `[string]` (must be non-empty). List = argv, exec'd directly — **no shell**, no quoting/interpolation; each entry a non-empty string without NUL; list may not be empty. At launch, the command-line tail (args after the profile) appends AFTER this argv — a string command becomes `[string]` first |
 | `spec.agentRoot` | path string | yes | non-empty; absolute or `~/`-prefixed (bare `~` ok); no `"`/newline/CR/NUL; **no `..` segments**; no trailing `/`. Stored lexically, `~` expands at resolve |
 | `spec.agentRootEnv` | string | no | env var name `^[A-Za-z_][A-Za-z0-9_]*$`. When set **non-empty** at launch it overrides `agentRoot` (the value is tilde-expanded and sanitized the same way) |
 | `spec.widenToDotParent` | bool | no | default `false`. Widens a dot-dir root one level: `~/.pi/agent` → `~/.pi` (skills/themes live next to agent state). Applied once, after any env override |
@@ -209,7 +223,7 @@ spec:
 ### 2. Custom harness with grants (argv command)
 
 ```yaml
-# .cube-sandbox/myagent.yaml — launch: cube-sandbox launch myagent --use-github
+# .cube-sandbox/myagent.yaml — launch: cube-sandbox launch --use-github myagent
 apiVersion: cube-sandbox/v1
 kind: Harness
 metadata:
