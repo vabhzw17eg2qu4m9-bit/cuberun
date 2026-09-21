@@ -18,8 +18,8 @@ void main() {
   /// Headless one-shot invocation per harness (env-overridable for
   /// harnesses with different flags).
   List<String> headlessArgs(String harness, String prompt) {
-    final override =
-        Platform.environment['CUBERUN_SMOKE_ARGS_${harness.toUpperCase()}'];
+    final override = Platform
+        .environment['CUBE_SANDBOX_SMOKE_ARGS_${harness.toUpperCase()}'];
     if (override != null && override.trim().isNotEmpty) {
       return [...override.split(' '), prompt];
     }
@@ -45,10 +45,10 @@ void main() {
           );
           return;
         }
-        final proj = Directory.systemTemp.createTempSync('cuberun-smoke-');
+        final proj = Directory.systemTemp.createTempSync('cube-sandbox-smoke-');
         addTearDown(() => proj.deleteSync(recursive: true));
-        final r = h.runCuberun([
-          'run',
+        final r = h.launchCubeSandbox([
+          'launch',
           harness,
           '--',
           ...headlessArgs(harness, 'Reply with exactly: OK'),

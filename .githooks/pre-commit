@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cuberun pre-commit "krep": self-healing format + CRAP < 10 gate.
+# cube-sandbox pre-commit "krep": self-healing format + CRAP < 10 gate.
 # Convention copied from flutter_agent_harness scripts/pre-commit (lean
 # cut: no flutter/golden stages here). Install: git config core.hooksPath
 # .githooks.  Skip (emergency only): git commit --no-verify.

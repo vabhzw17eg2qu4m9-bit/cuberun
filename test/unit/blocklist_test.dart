@@ -1,13 +1,13 @@
-import 'package:cuberun/src/exceptions.dart';
-import 'package:cuberun/src/harness_manifest.dart';
-import 'package:cuberun/src/runtime.dart';
-import 'package:cuberun/src/service_grants.dart';
+import 'package:cube_sandbox/src/exceptions.dart';
+import 'package:cube_sandbox/src/harness_manifest.dart';
+import 'package:cube_sandbox/src/runtime.dart';
+import 'package:cube_sandbox/src/service_grants.dart';
 import 'package:test/test.dart';
 
 /// E10 / AC11 (UT) — ungrantable paths: ~/.ssh, ~/.gnupg,
 /// ~/Library/Keychains (both spellings) are rejected from every
-/// DECLARATIVE source; CUBERUN_EXTRA_READ is the escape hatch (honored,
-/// warning collected — never silent); CUBERUN_EXTRA_WRITE never.
+/// DECLARATIVE source; CUBE_SANDBOX_EXTRA_READ is the escape hatch (honored,
+/// warning collected — never silent); CUBE_SANDBOX_EXTRA_WRITE never.
 void main() {
   const home = '/Users/dev';
 
@@ -79,7 +79,7 @@ void main() {
         services: const {},
         cwd: '/w',
         home: home,
-        env: {'CUBERUN_EXTRA_READ': '$home/.ssh'},
+        env: {'CUBE_SANDBOX_EXTRA_READ': '$home/.ssh'},
         fs: _FakeIO(),
       );
       expect(rt.extraRead, contains('$home/.ssh'));
@@ -95,7 +95,7 @@ void main() {
           services: const {},
           cwd: '/w',
           home: home,
-          env: {'CUBERUN_EXTRA_WRITE': '$home/.ssh'},
+          env: {'CUBE_SANDBOX_EXTRA_WRITE': '$home/.ssh'},
           fs: _FakeIO(),
         ),
         throwsA(isA<ConfigException>()),
@@ -109,8 +109,8 @@ void main() {
         cwd: '/w',
         home: home,
         env: {
-          'CUBERUN_EXTRA_READ': '/opt/ro',
-          'CUBERUN_EXTRA_WRITE': '/opt/rw',
+          'CUBE_SANDBOX_EXTRA_READ': '/opt/ro',
+          'CUBE_SANDBOX_EXTRA_WRITE': '/opt/rw',
         },
         fs: _FakeIO(),
       );

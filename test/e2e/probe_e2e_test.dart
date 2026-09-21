@@ -3,12 +3,12 @@ library;
 
 import 'dart:io';
 
-import 'package:cuberun/src/harness_manifest.dart';
-import 'package:cuberun/src/runtime.dart';
-import 'package:cuberun/src/probe.dart';
-import 'package:cuberun/src/sbpl.dart';
-import 'package:cuberun/src/service_grants.dart';
-import 'package:cuberun/src/stage.dart';
+import 'package:cube_sandbox/src/harness_manifest.dart';
+import 'package:cube_sandbox/src/runtime.dart';
+import 'package:cube_sandbox/src/probe.dart';
+import 'package:cube_sandbox/src/sbpl.dart';
+import 'package:cube_sandbox/src/service_grants.dart';
+import 'package:cube_sandbox/src/stage.dart';
 import 'package:test/test.dart';
 
 import '../helpers/e2e_helpers.dart' as h;
@@ -38,7 +38,7 @@ void main() {
   test(
     'AC6: full probe passes on the real backend',
     () async {
-      final root = await Directory.systemTemp.createTemp('cuberun-probe-');
+      final root = await Directory.systemTemp.createTemp('cube-sandbox-probe-');
       addTearDown(() => root.delete(recursive: true));
       final proj = _sub(root, 'proj').path;
       final home = _sub(root, 'home').path;
@@ -69,7 +69,7 @@ void main() {
   test(
     'AC6 negative control: sabotaged profile FAILS the probe',
     () async {
-      final root = await Directory.systemTemp.createTemp('cuberun-neg-');
+      final root = await Directory.systemTemp.createTemp('cube-sandbox-neg-');
       addTearDown(() => root.delete(recursive: true));
       final proj = _sub(root, 'proj').path;
       final home = _sub(root, 'home').path;
@@ -106,7 +106,9 @@ void main() {
   test(
     'AC10 E2E: --use-github grants are read-only, rest of HOME denied',
     () async {
-      final root = await Directory.systemTemp.createTemp('cuberun-ghgrant-');
+      final root = await Directory.systemTemp.createTemp(
+        'cube-sandbox-ghgrant-',
+      );
       addTearDown(() => root.delete(recursive: true));
       // Disjoint proj/home/tmp subtrees: the gh read grant must be the ONLY
       // reason hosts.yml is readable, and the denial targets under home

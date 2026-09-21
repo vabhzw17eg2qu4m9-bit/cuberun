@@ -83,8 +83,8 @@ String sanitizeManifestPath(Object? value, String where) {
   return p;
 }
 
-/// Splits a colon-separated env-knob value (`CUBERUN_EXTRA_READ` /
-/// `CUBERUN_EXTRA_WRITE`): trims, drops empties, expands `~` against
+/// Splits a colon-separated env-knob value (`CUBE_SANDBOX_EXTRA_READ` /
+/// `CUBE_SANDBOX_EXTRA_WRITE`): trims, drops empties, expands `~` against
 /// [home]. Returns `[]` for null/empty.
 List<String> parseEnvPathList(String? value, String home) {
   if (value == null || value.trim().isEmpty) return const [];

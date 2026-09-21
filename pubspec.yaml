@@ -1,9 +1,9 @@
-name: cuberun
+name: cube_sandbox
 description: >-
   Kernel-confined launcher for AI coding harnesses: wraps the whole
   harness process tree (pi / omp / fa) in a macOS sandbox-exec Layer-0
   profile resolved from a strict yaml manifest.
-version: 0.1.1
+version: 0.2.0
 homepage: https://github.com/vabhzw17eg2qu4m9-bit/cuberun
 repository: https://github.com/vabhzw17eg2qu4m9-bit/cuberun
 
@@ -11,7 +11,7 @@ environment:
   sdk: '>=3.9.0 <4.0.0'
 
 executables:
-  cuberun: cuberun
+  cube-sandbox: cube_sandbox
 
 dependencies:
   args: ^2.7.0

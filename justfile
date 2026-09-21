@@ -1,4 +1,4 @@
-# cuberun — justfile (dart is expected on PATH)
+# cube-sandbox — justfile (dart is expected on PATH)
 
 default:
     @just --list
@@ -35,7 +35,7 @@ integration:
 build:
     dart pub get
     mkdir -p build
-    dart compile exe bin/cuberun.dart -o build/cuberun-macos-arm64
+    dart compile exe bin/cube_sandbox.dart -o build/cube-sandbox-macos-arm64
 
 # Everything CI runs, in order.
 ci: format-check analyze test

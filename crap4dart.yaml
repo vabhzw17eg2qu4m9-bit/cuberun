@@ -1,4 +1,4 @@
-# crap4dart configuration for cuberun.
+# crap4dart configuration for cube-sandbox.
 # https://github.com/IstiN/crap4dart
 #
 # RATCHET: CRAP must stay < 10 (owner's pinned rule, not fah's 12) —
@@ -39,7 +39,7 @@ gates:
   file_naming: {enabled: false}
   magic_constants: {enabled: false}
   test_assertions: {enabled: false}
-  folder_structure: {enabled: false} # single-file lib/cuberun.dart is idiomatic Dart
+  folder_structure: {enabled: false} # single-file lib/cube_sandbox.dart is idiomatic Dart
   external: {enabled: false}
   golden: {enabled: false} # no Flutter here
   accessibility: {enabled: false} # no Flutter here

@@ -5,7 +5,7 @@ import 'dart:io';
 
 /// Why a suite cannot run on this host right now (never silent).
 String? nestedSandboxDeniedReason() {
-  final tmpDir = Directory.systemTemp.createTempSync('cuberun-guard-');
+  final tmpDir = Directory.systemTemp.createTempSync('cube-sandbox-guard-');
   try {
     final sb = File('${tmpDir.path}/guard.sb');
     sb.writeAsStringSync('(version 1)\n(allow default)\n(deny file-write*)\n');
@@ -29,17 +29,17 @@ String? nestedSandboxDeniedReason() {
   }
 }
 
-/// Builds the cuberun binary once per suite run; returns its path.
+/// Builds the cube-sandbox binary once per suite run; returns its path.
 /// Absolute: tests invoke it with a differing workingDirectory, and a
 /// relative path would ENOENT from there.
 String ensureBinary() {
-  final exe = '${Directory.current.path}/.cache/cuberun-e2e';
+  final exe = '${Directory.current.path}/.cache/cube-sandbox-e2e';
   if (!File(exe).existsSync()) {
     File(exe).parent.createSync(recursive: true);
     final r = Process.runSync('dart', [
       'compile',
       'exe',
-      'bin/cuberun.dart',
+      'bin/cube_sandbox.dart',
       '-o',
       exe,
     ]);
@@ -50,7 +50,7 @@ String ensureBinary() {
   return exe;
 }
 
-/// One cuberun invocation; returns (exit, stdout, stderr).
+/// One cube-sandbox invocation; returns (exit, stdout, stderr).
 class RunOut {
   RunOut(this.exit, this.stdout, this.stderr);
   final int exit;
@@ -58,13 +58,17 @@ class RunOut {
   final String stderr;
 }
 
-RunOut runCuberun(List<String> args, {String? cwd, Map<String, String>? env}) {
+RunOut launchCubeSandbox(
+  List<String> args, {
+  String? cwd,
+  Map<String, String>? env,
+}) {
   final exe = ensureBinary();
   final r = Process.runSync(
     exe,
     args,
     workingDirectory: cwd,
-    environment: {...?env, 'CUBERUN_E2E': '1'},
+    environment: {...?env, 'CUBE_SANDBOX_E2E': '1'},
   );
   return RunOut(r.exitCode, r.stdout as String, r.stderr as String);
 }
@@ -79,7 +83,7 @@ bool providerEnvPresent() {
     'GOOGLE_API_KEY',
     'GROQ_API_KEY',
     'OPENROUTER_API_KEY',
-    'CUBERUN_FORCE_PROVIDER_ENV',
+    'CUBE_SANDBOX_FORCE_PROVIDER_ENV',
   ];
   return Platform.environment.keys
       .toSet()
@@ -89,10 +93,10 @@ bool providerEnvPresent() {
 
 /// Deterministic commit identity/dates (shared with the git matrix).
 const Map<String, String> gitEnv = {
-  'GIT_AUTHOR_NAME': 'cuberun test',
-  'GIT_AUTHOR_EMAIL': 'cuberun@test.local',
-  'GIT_COMMITTER_NAME': 'cuberun test',
-  'GIT_COMMITTER_EMAIL': 'cuberun@test.local',
+  'GIT_AUTHOR_NAME': 'cube-sandbox test',
+  'GIT_AUTHOR_EMAIL': 'cube-sandbox@test.local',
+  'GIT_COMMITTER_NAME': 'cube-sandbox test',
+  'GIT_COMMITTER_EMAIL': 'cube-sandbox@test.local',
   'GIT_AUTHOR_DATE': '2005-04-07T22:13:13 +0000',
   'GIT_COMMITTER_DATE': '2005-04-07T22:13:13 +0000',
 };
@@ -119,19 +123,19 @@ GitFixture makeGitFixture(String root, String name) {
   Directory(seed).createSync(recursive: true);
   const ident = [
     '-c',
-    'user.name=cuberun test',
+    'user.name=cube-sandbox test',
     '-c',
-    'user.email=cuberun@test.local',
+    'user.email=cube-sandbox@test.local',
   ];
   void git(List<String> args, [String? cwd]) => Process.runSync(
     'git',
     args,
     workingDirectory: cwd ?? seed,
     environment: const {
-      'GIT_AUTHOR_NAME': 'cuberun test',
-      'GIT_AUTHOR_EMAIL': 'cuberun@test.local',
-      'GIT_COMMITTER_NAME': 'cuberun test',
-      'GIT_COMMITTER_EMAIL': 'cuberun@test.local',
+      'GIT_AUTHOR_NAME': 'cube-sandbox test',
+      'GIT_AUTHOR_EMAIL': 'cube-sandbox@test.local',
+      'GIT_COMMITTER_NAME': 'cube-sandbox test',
+      'GIT_COMMITTER_EMAIL': 'cube-sandbox@test.local',
       'GIT_AUTHOR_DATE': '2005-04-07T22:13:13 +0000',
       'GIT_COMMITTER_DATE': '2005-04-07T22:13:13 +0000',
     },

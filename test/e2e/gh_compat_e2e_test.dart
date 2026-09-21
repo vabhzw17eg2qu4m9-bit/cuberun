@@ -4,7 +4,7 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:cuberun/src/tool_catalog.dart';
+import 'package:cube_sandbox/src/tool_catalog.dart';
 import 'package:test/test.dart';
 
 import '../helpers/e2e_helpers.dart' as h;
@@ -13,9 +13,9 @@ import '../helpers/e2e_helpers.dart' as h;
 /// `pi`/`fa` profiles with `--use-github` (token from the granted
 /// `~/.config/gh` or GH_TOKEN env) with IDENTICAL outcomes to the
 /// unconfined baseline. `issue create` / `pr create` run FOR REAL
-/// against the cuberun repo itself (scratch branch/issue titled
-/// `cuberun-matrix-<timestamp>`, closed/deleted in teardown even on
-/// failure; target from CUBERUN_GH_TARGET_REPO, default: this checkout
+/// against the cube-sandbox repo itself (scratch branch/issue titled
+/// `cube-sandbox-matrix-<timestamp>`, closed/deleted in teardown even on
+/// failure; target from CUBE_SANDBOX_GH_TARGET_REPO, default: this checkout
 /// or GITHUB_REPOSITORY in CI — never a NEW repository). Skips with a
 /// loud reason when gh, a token or a target repo is absent — never
 /// silently green.
@@ -46,11 +46,11 @@ void main() {
       }
 
       final env = {'GH_TOKEN': token, 'GITHUB_TOKEN': token};
-      final proj = Directory.systemTemp.createTempSync('cuberun-ghmx-');
+      final proj = Directory.systemTemp.createTempSync('cube-sandbox-ghmx-');
       addTearDown(() => proj.deleteSync(recursive: true));
 
       // create verbs are excluded here — they run FOR REAL in the two
-      // dedicated tests below (scratch issue/branch in the cuberun repo,
+      // dedicated tests below (scratch issue/branch in the cube-sandbox repo,
       // swept in teardown).
       for (final cmd in kGhCommands.where((c) => !c.contains('create'))) {
         final args = cmd.split(' ');
@@ -85,8 +85,8 @@ void main() {
           environment: env,
         );
         for (final profile in _profiles) {
-          final conf = h.runCuberun(
-            ['run', profile, '--use-github', '--', 'gh', ...full],
+          final conf = h.launchCubeSandbox(
+            ['launch', profile, '--use-github', '--', 'gh', ...full],
             cwd: proj.path,
             env: env,
           );
@@ -108,7 +108,7 @@ void main() {
   );
 
   test(
-    'gh issue create: confined == unconfined against the cuberun repo',
+    'gh issue create: confined == unconfined against the cube-sandbox repo',
     () {
       final g = _createGuards();
       if (g.skip != null) {
@@ -119,9 +119,10 @@ void main() {
         'GH_TOKEN': g.token!,
         'GITHUB_TOKEN': g.token!,
       };
-      final proj = Directory.systemTemp.createTempSync('cuberun-ghissue-');
+      final proj = Directory.systemTemp.createTempSync('cube-sandbox-ghissue-');
       addTearDown(() => proj.deleteSync(recursive: true));
-      final title = 'cuberun-matrix-${DateTime.now().millisecondsSinceEpoch}';
+      final title =
+          'cube-sandbox-matrix-${DateTime.now().millisecondsSinceEpoch}';
       final args = [
         'issue',
         'create',
@@ -143,8 +144,8 @@ void main() {
         environment: env,
       );
       created.addAll(_issueNumbers(base.stdout as String));
-      final conf = h.runCuberun(
-        ['run', 'fa', '--use-github', '--', 'gh', ...args],
+      final conf = h.launchCubeSandbox(
+        ['launch', 'fa', '--use-github', '--', 'gh', ...args],
         cwd: proj.path,
         env: env,
       );
@@ -173,7 +174,7 @@ void main() {
   );
 
   test(
-    'gh pr create: confined == unconfined against the cuberun repo',
+    'gh pr create: confined == unconfined against the cube-sandbox repo',
     () {
       final g = _createGuards();
       if (g.skip != null) {
@@ -185,9 +186,10 @@ void main() {
         'GH_TOKEN': g.token!,
         'GITHUB_TOKEN': g.token!,
       };
-      final proj = Directory.systemTemp.createTempSync('cuberun-ghpr-');
+      final proj = Directory.systemTemp.createTempSync('cube-sandbox-ghpr-');
       addTearDown(() => proj.deleteSync(recursive: true));
-      final title = 'cuberun-matrix-${DateTime.now().millisecondsSinceEpoch}';
+      final title =
+          'cube-sandbox-matrix-${DateTime.now().millisecondsSinceEpoch}';
       final branchBase = '$title-base';
       final branchConf = '$title-conf';
       final prs = <String>[];
@@ -232,9 +234,9 @@ void main() {
             'PUT',
             'repos/$repo/contents/$title-$side.txt',
             '-f',
-            'message=cuberun matrix scratch',
+            'message=cube-sandbox matrix scratch',
             '-f',
-            'content=${base64.encode(utf8.encode('cuberun matrix scratch\n'))}',
+            'content=${base64.encode(utf8.encode('cube-sandbox matrix scratch\n'))}',
             '-f',
             'branch=$branch',
           ],
@@ -284,8 +286,8 @@ void main() {
         );
         return;
       }
-      final conf = h.runCuberun(
-        ['run', 'fa', '--use-github', '--', 'gh', ...prArgs(branchConf)],
+      final conf = h.launchCubeSandbox(
+        ['launch', 'fa', '--use-github', '--', 'gh', ...prArgs(branchConf)],
         cwd: proj.path,
         env: env,
       );
@@ -313,7 +315,7 @@ void main() {
 }
 
 /// Guards for the real create-verb legs: (gh binary, token, target repo)
-/// or a loud skip reason. Target is the cuberun repo ITSELF — issues and
+/// or a loud skip reason. Target is the cube-sandbox repo ITSELF — issues and
 /// branches there are disposable; a NEW repository is never created
 /// (workflow GITHUB_TOKEN cannot, and must not).
 ({String? skip, String? token, String? repo}) _createGuards() {
@@ -336,7 +338,7 @@ void main() {
   if (repo == null) {
     return (
       skip:
-          'no CUBERUN_GH_TARGET_REPO/GITHUB_REPOSITORY and `gh repo view` '
+          'no CUBE_SANDBOX_GH_TARGET_REPO/GITHUB_REPOSITORY and `gh repo view` '
           'resolved nothing — create-verb leg skipped loudly',
       token: null,
       repo: null,
@@ -345,12 +347,12 @@ void main() {
   return (skip: null, token: token, repo: repo);
 }
 
-/// AC12(b)/E11 target repo: CUBERUN_GH_TARGET_REPO > GITHUB_REPOSITORY
+/// AC12(b)/E11 target repo: CUBE_SANDBOX_GH_TARGET_REPO > GITHUB_REPOSITORY
 /// (CI) > `gh repo view` in the checkout (dart test runs from the
 /// package root, which IS the repo).
 String? _targetRepo() {
   final direct =
-      Platform.environment['CUBERUN_GH_TARGET_REPO'] ??
+      Platform.environment['CUBE_SANDBOX_GH_TARGET_REPO'] ??
       Platform.environment['GITHUB_REPOSITORY'];
   if (direct != null && direct.trim().isNotEmpty) return direct.trim();
   final r = Process.runSync('gh', const [

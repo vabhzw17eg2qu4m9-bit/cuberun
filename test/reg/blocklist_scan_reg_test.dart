@@ -1,7 +1,7 @@
-import 'package:cuberun/src/presets.dart';
-import 'package:cuberun/src/runtime.dart';
-import 'package:cuberun/src/sbpl.dart';
-import 'package:cuberun/src/service_grants.dart';
+import 'package:cube_sandbox/src/presets.dart';
+import 'package:cube_sandbox/src/runtime.dart';
+import 'package:cube_sandbox/src/sbpl.dart';
+import 'package:cube_sandbox/src/service_grants.dart';
 import 'package:test/test.dart';
 
 /// REG / AC11 — no profile for ANY flag combination contains an allow
@@ -67,7 +67,7 @@ void main() {
           services: const {},
           cwd: '/Users/dev/proj',
           home: home,
-          env: {'HOME': home, 'CUBERUN_EXTRA_WRITE': '$home/.gnupg'},
+          env: {'HOME': home, 'CUBE_SANDBOX_EXTRA_WRITE': '$home/.gnupg'},
           fs: _NoIO(),
         ),
         throwsA(isA<Exception>()),

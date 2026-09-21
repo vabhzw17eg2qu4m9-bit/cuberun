@@ -1,6 +1,6 @@
-import 'package:cuberun/src/harness_manifest.dart';
-import 'package:cuberun/src/runtime.dart';
-import 'package:cuberun/src/sbpl.dart';
+import 'package:cube_sandbox/src/harness_manifest.dart';
+import 'package:cube_sandbox/src/runtime.dart';
+import 'package:cube_sandbox/src/sbpl.dart';
 import 'package:test/test.dart';
 
 /// REG — staged/emitted profiles contain PATHS ONLY: no env values, no
@@ -31,7 +31,7 @@ void main() {
         'GITHUB_TOKEN': sentinels[2],
         'PASSWORD': sentinels[3],
         'WEIRD': sentinels[0],
-        'CUBERUN_EXTRA_READ': '/opt/clean',
+        'CUBE_SANDBOX_EXTRA_READ': '/opt/clean',
       },
       fs: _NoIO(),
     );

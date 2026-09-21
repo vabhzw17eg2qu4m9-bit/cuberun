@@ -1,6 +1,6 @@
 # Configuration reference
 
-Everything `cuberun` knows is in one place: a **harness manifest** — a
+Everything `cube-sandbox` knows is in one place: a **harness manifest** — a
 strict YAML document naming one AI harness launch and the folder grants
 of its Layer-0 kernel profile. The same parser reads built-in presets,
 project files, user files and scaffolds; there is no second, looser
@@ -12,20 +12,20 @@ Source of truth: `lib/src/harness_manifest.dart` (schema), `lib/src/paths.dart`
 
 ## File locations & resolution precedence
 
-Given `cuberun <verb> <name>`, the profile resolves through a fixed
+Given `cube-sandbox <verb> <name>`, the profile resolves through a fixed
 precedence chain — first hit wins:
 
 1. `--yaml '<text>'` / `--yaml -` (inline text, or stdin read to EOF) — highest
 2. `--file <path>`
-3. `<cwd>/.cuberun/<name>.yaml` (project)
-4. `~/.cuberun/<name>.yaml` (user)
+3. `<cwd>/.cube-sandbox/<name>.yaml` (project)
+4. `~/.cube-sandbox/<name>.yaml` (user)
 5. built-in preset: `fa` (`~/.fah`), `omp` (`~/.omp`), `pi` (`~/.pi`, widened)
 
 Notes:
 
 - For file sources the **filename stem is the profile id**:
-  `.cuberun/acme.yaml` is `cuberun run acme` even if its
-  `metadata.name` says something else — what `cuberun list` shows is
+  `.cube-sandbox/acme.yaml` is `cube-sandbox launch acme` even if its
+  `metadata.name` says something else — what `cube-sandbox list` shows is
   what launches. `--yaml` has no filename: the profile name keys on
   `metadata.name`. The positional `<name>` is still typed for all
   sources (it names the profile in banners and diagnostics).
@@ -36,8 +36,8 @@ Notes:
   `<inline yaml>` (no filename exists to point at).
 - A total miss fails loudly, listing every location searched and the
   preset ids:
-  `profile 'x' not found — looked: --file (none), <cwd>/.cuberun/x.yaml, ~/.cuberun/x.yaml, presets(fa, omp, pi)`.
-- `cuberun list` enumerates presets + project + user files with source
+  `profile 'x' not found — looked: --file (none), <cwd>/.cube-sandbox/x.yaml, ~/.cube-sandbox/x.yaml, presets(fa, omp, pi)`.
+- `cube-sandbox list` enumerates presets + project + user files with source
   labels; a file that does not parse lists as
   `<parse error — run to see diagnostic>` and fails loudly when launched.
 - Built-in presets are manifest TEXT parsed by the same strict parser —
@@ -46,11 +46,11 @@ Notes:
 ## Manifest schema
 
 ```yaml
-apiVersion: cuberun/v1        # required, exactly "cuberun/v1"
+apiVersion: cube-sandbox/v1        # required, exactly "cube-sandbox/v1"
 kind: Harness                 # required, exactly "Harness"
 metadata:                     # required map
   name: myagent               # required, ^[a-z][a-z0-9-]*$
-  description: "…"            # optional string, shown by `cuberun list`
+  description: "…"            # optional string, shown by `cube-sandbox list`
 spec:                         # required map
   command: myagent            # required — string OR argv list (below)
   agentRoot: ~/.myagent       # required state root (rw)
@@ -67,11 +67,11 @@ spec:                         # required map
 
 | key | type | required | rules |
 | --- | --- | --- | --- |
-| `apiVersion` | string | yes | exactly `cuberun/v1` |
+| `apiVersion` | string | yes | exactly `cube-sandbox/v1` |
 | `kind` | string | yes | exactly `Harness` |
 | `metadata` | map | yes | only keys `name`, `description` |
 | `metadata.name` | string | yes | must match `^[a-z][a-z0-9-]*$` |
-| `metadata.description` | string | no | free text; `cuberun list` shows it |
+| `metadata.description` | string | no | free text; `cube-sandbox list` shows it |
 | `spec` | map | yes | only keys listed below |
 | `spec.command` | string or list | yes | string → argv `[string]` (must be non-empty). List = argv, exec'd directly — **no shell**, no quoting/interpolation; each entry a non-empty string without NUL; list may not be empty |
 | `spec.agentRoot` | path string | yes | non-empty; absolute or `~/`-prefixed (bare `~` ok); no `"`/newline/CR/NUL; **no `..` segments**; no trailing `/`. Stored lexically, `~` expands at resolve |
@@ -153,33 +153,33 @@ changes the output.
 
 Colon-separated path lists, `~` expanded, empty entries dropped:
 
-- `CUBERUN_EXTRA_READ` — appended as read-only grants.
-- `CUBERUN_EXTRA_WRITE` — appended as read-write grants.
+- `CUBE_SANDBOX_EXTRA_READ` — appended as read-only grants.
+- `CUBE_SANDBOX_EXTRA_WRITE` — appended as read-write grants.
 
 **Ungrantable roots (E10):** `~/.ssh`, `~/.gnupg`,
 `~/Library/Keychains` (+ their `/private` spellings) — no manifest
-path, service grant or `CUBERUN_EXTRA_WRITE` may ever touch them:
+path, service grant or `CUBE_SANDBOX_EXTRA_WRITE` may ever touch them:
 
 - manifest/`agentRoot` violation → `ungrantable path(s) from manifest "name": …` (exit 2, launch refused)
-- `CUBERUN_EXTRA_WRITE` violation → hard error, launch refused (exit 2)
-- `CUBERUN_EXTRA_READ` violation → the single operator escape hatch:
-  honored, but never silent — a loud `⚠ CUBERUN_EXTRA_READ carries
+- `CUBE_SANDBOX_EXTRA_WRITE` violation → hard error, launch refused (exit 2)
+- `CUBE_SANDBOX_EXTRA_READ` violation → the single operator escape hatch:
+  honored, but never silent — a loud `⚠ CUBE_SANDBOX_EXTRA_READ carries
   blocklisted path … operator override honored, NEVER silent (E10)`
   banner prints on every launch
 
 ## Scaffold & validation workflow
 
 ```sh
-cuberun new myagent --command myagent --agent-root ~/.myagent
-# → .cuberun/<name>.yaml, refuse-if-exists, round-trip parse-verified
+cube-sandbox new myagent --command myagent --agent-root ~/.myagent
+# → .cube-sandbox/<name>.yaml, refuse-if-exists, round-trip parse-verified
 #   (--command/--agent-root fail the same schema; name must match ^[a-z][a-z0-9-]*$)
 
-cuberun sbpl myagent               # exact kernel profile text — also THE parse check
-cuberun sbpl myagent --file p.yaml # validate a file without installing it
-cuberun show myagent               # resolved grants: rw / ro / denied banner
-cuberun probe myagent              # self-checks FROM INSIDE the profile; exit 0/1
-cuberun run myagent                # launch (profile's own command)
-cuberun run myagent -- git status  # or any command under the same boundary
+cube-sandbox sbpl myagent               # exact kernel profile text — also THE parse check
+cube-sandbox sbpl myagent --file p.yaml # validate a file without installing it
+cube-sandbox show myagent               # resolved grants: rw / ro / denied banner
+cube-sandbox probe myagent              # self-checks FROM INSIDE the profile; exit 0/1
+cube-sandbox launch myagent                # launch (profile's own command)
+cube-sandbox launch myagent -- git status  # or any command under the same boundary
 ```
 
 Exit codes: `0` ok · `1` probe failure · `2` config error
@@ -192,8 +192,8 @@ otherwise the child's own code (signal n ⇒ `128 + n`).
 ### 1. Minimal, pi-shaped (string command)
 
 ```yaml
-# .cuberun/pilike.yaml
-apiVersion: cuberun/v1
+# .cube-sandbox/pilike.yaml
+apiVersion: cube-sandbox/v1
 kind: Harness
 metadata:
   name: pilike
@@ -209,8 +209,8 @@ spec:
 ### 2. Custom harness with grants (argv command)
 
 ```yaml
-# .cuberun/myagent.yaml — launch: cuberun run myagent --use-github
-apiVersion: cuberun/v1
+# .cube-sandbox/myagent.yaml — launch: cube-sandbox launch myagent --use-github
+apiVersion: cube-sandbox/v1
 kind: Harness
 metadata:
   name: myagent
@@ -231,8 +231,8 @@ spec:
 ### 3. One-shot wrapper (confine an arbitrary command)
 
 ```yaml
-# .cuberun/oneshot.yaml — launch: cuberun run oneshot -- claude -p "hi"
-apiVersion: cuberun/v1
+# .cube-sandbox/oneshot.yaml — launch: cube-sandbox launch oneshot -- claude -p "hi"
+apiVersion: cube-sandbox/v1
 kind: Harness
 metadata:
   name: oneshot
@@ -248,6 +248,6 @@ spec:
 Validate any of these before committing them:
 
 ```sh
-cuberun sbpl pilike --file .cuberun/pilike.yaml   # parse + emit, no side effects
-cuberun probe pilike                              # boundary self-check
+cube-sandbox sbpl pilike --file .cube-sandbox/pilike.yaml   # parse + emit, no side effects
+cube-sandbox probe pilike                              # boundary self-check
 ```

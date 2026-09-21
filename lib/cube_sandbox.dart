@@ -1,4 +1,4 @@
-/// cuberun — kernel-confined launcher for AI harnesses (pi / omp / fa):
+/// cube-sandbox — kernel-confined launcher for AI harnesses (pi / omp / fa):
 /// wraps a harness's whole process tree in a macOS sandbox-exec Layer-0
 /// profile resolved from a strict yaml manifest.
 library;
@@ -16,4 +16,4 @@ export 'src/sbpl.dart';
 export 'src/service_grants.dart';
 export 'src/stage.dart';
 export 'src/tool_catalog.dart';
-export 'src/cli.dart' show kCuberunVersion, runCli;
+export 'src/cli.dart' show kCubeSandboxVersion, runCli;

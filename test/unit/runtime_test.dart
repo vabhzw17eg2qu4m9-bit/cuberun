@@ -1,8 +1,8 @@
 import 'dart:convert' show utf8;
 import 'dart:io' as io;
 
-import 'package:cuberun/src/harness_manifest.dart';
-import 'package:cuberun/src/runtime.dart';
+import 'package:cube_sandbox/src/harness_manifest.dart';
+import 'package:cube_sandbox/src/runtime.dart';
 import 'package:test/test.dart';
 
 /// E5 — PATH lookup happens INSIDE the sandbox: the dir holding the

@@ -1,5 +1,5 @@
-import 'package:cuberun/src/runtime.dart';
-import 'package:cuberun/src/sbpl.dart';
+import 'package:cube_sandbox/src/runtime.dart';
+import 'package:cube_sandbox/src/sbpl.dart';
 import 'package:test/test.dart';
 
 /// AC4 — determinism: identical runtime facts => byte-identical SBPL and

@@ -1,5 +1,5 @@
-/// HarnessResolver: `--yaml` (inline) > `--file` > project `.cuberun/` >
-/// user `~/.cuberun/` > preset (AC3; both flags together fail closed).
+/// HarnessResolver: `--yaml` (inline) > `--file` > project `.cube-sandbox/` >
+/// user `~/.cube-sandbox/` > preset (AC3; both flags together fail closed).
 /// Resolution keys on the FILENAME stem, so what lists is
 /// what launches even when `metadata.name` differs (E8).
 library;
@@ -19,11 +19,11 @@ enum HarnessSource {
   /// Explicit `--file` override.
   file('file'),
 
-  /// `<cwd>/.cuberun/<name>.yaml`.
-  project('.cuberun/ (project)'),
+  /// `<cwd>/.cube-sandbox/<name>.yaml`.
+  project('.cube-sandbox/ (project)'),
 
-  /// `~/.cuberun/<name>.yaml`.
-  user('~/.cuberun/ (user)'),
+  /// `~/.cube-sandbox/<name>.yaml`.
+  user('~/.cube-sandbox/ (user)'),
 
   /// Built-in preset manifest text.
   preset('preset');
@@ -49,7 +49,7 @@ final class ResolvedHarness {
   final String? path;
 }
 
-/// One `cuberun list` row.
+/// One `cube-sandbox list` row.
 final class ProfileListing {
   /// Creates a row.
   const ProfileListing({
@@ -85,16 +85,16 @@ Future<String> readManifestStdin({Stream<List<int>>? source}) async {
   return text;
 }
 
-/// Precedence-chain resolver: `--yaml` > `--file` > project `.cuberun/` >
-/// user `~/.cuberun/` > built-in presets (GOAL AC3).
+/// Precedence-chain resolver: `--yaml` > `--file` > project `.cube-sandbox/` >
+/// user `~/.cube-sandbox/` > built-in presets (GOAL AC3).
 final class HarnessResolver {
   /// Creates a resolver rooted at [cwd]/[home].
   const HarnessResolver({required this.cwd, required this.home});
 
-  /// Project directory (`.cuberun/` lives here).
+  /// Project directory (`.cube-sandbox/` lives here).
   final String cwd;
 
-  /// User home (`~/.cuberun/` lives here).
+  /// User home (`~/.cube-sandbox/` lives here).
   final String home;
 
   /// Resolves [name] (or an explicit [yaml] / [file]) through the
@@ -116,7 +116,7 @@ final class HarnessResolver {
         path: file,
       );
     }
-    final project = io.File('$cwd/.cuberun/$name.yaml');
+    final project = io.File('$cwd/.cube-sandbox/$name.yaml');
     if (project.existsSync()) {
       return ResolvedHarness(
         spec: _parseFile(project),
@@ -124,7 +124,7 @@ final class HarnessResolver {
         path: project.path,
       );
     }
-    final user = io.File('$home/.cuberun/$name.yaml');
+    final user = io.File('$home/.cube-sandbox/$name.yaml');
     if (user.existsSync()) {
       return ResolvedHarness(
         spec: _parseFile(user),
@@ -183,8 +183,8 @@ final class HarnessResolver {
       }
     }
 
-    scan('$cwd/.cuberun', HarnessSource.project);
-    scan('$home/.cuberun', HarnessSource.user);
+    scan('$cwd/.cube-sandbox', HarnessSource.project);
+    scan('$home/.cube-sandbox', HarnessSource.user);
     return out;
   }
 

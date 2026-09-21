@@ -1,8 +1,8 @@
-import 'package:cuberun/src/exceptions.dart';
-import 'package:cuberun/src/harness_manifest.dart';
-import 'package:cuberun/src/runtime.dart';
-import 'package:cuberun/src/sbpl.dart';
-import 'package:cuberun/src/service_grants.dart';
+import 'package:cube_sandbox/src/exceptions.dart';
+import 'package:cube_sandbox/src/harness_manifest.dart';
+import 'package:cube_sandbox/src/runtime.dart';
+import 'package:cube_sandbox/src/sbpl.dart';
+import 'package:cube_sandbox/src/service_grants.dart';
 import 'package:test/test.dart';
 
 /// AC10 (UT) — service grants: EXACTLY the cataloged folders, union+dedup,

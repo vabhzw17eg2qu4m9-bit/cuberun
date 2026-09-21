@@ -1,5 +1,5 @@
-import 'package:cuberun/src/exceptions.dart';
-import 'package:cuberun/src/presets.dart';
+import 'package:cube_sandbox/src/exceptions.dart';
+import 'package:cube_sandbox/src/presets.dart';
 import 'package:test/test.dart';
 
 /// AC2 — exactly fa, omp, pi ship; each parses through the SAME strict

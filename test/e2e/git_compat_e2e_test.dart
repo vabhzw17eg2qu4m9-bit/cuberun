@@ -3,7 +3,7 @@ library;
 
 import 'dart:io';
 
-import 'package:cuberun/src/tool_catalog.dart';
+import 'package:cube_sandbox/src/tool_catalog.dart';
 import 'package:test/test.dart';
 
 import '../helpers/e2e_helpers.dart' as h;
@@ -25,7 +25,7 @@ void main() {
 
   setUpAll(() {
     if (hostGuard == null) {
-      tmpRoot = Directory.systemTemp.createTempSync('cuberun-gitmx-');
+      tmpRoot = Directory.systemTemp.createTempSync('cube-sandbox-gitmx-');
       h.ensureBinary();
     }
   });
@@ -141,7 +141,7 @@ void main() {
   test(
     'real github.com leg: ls-remote over https matches baseline',
     () {
-      final root = Directory.systemTemp.createTempSync('cuberun-real-');
+      final root = Directory.systemTemp.createTempSync('cube-sandbox-real-');
       addTearDown(() => root.deleteSync(recursive: true));
       const url = 'https://github.com/octocat/Hello-World.git';
       final base = _plainGit(['ls-remote', url], root.path);
@@ -165,7 +165,7 @@ void main() {
       final repo = _targetRepo();
       if (repo == null) {
         markTestSkipped(
-          'no CUBERUN_GH_TARGET_REPO/GITHUB_REPOSITORY and `gh repo view` '
+          'no CUBE_SANDBOX_GH_TARGET_REPO/GITHUB_REPOSITORY and `gh repo view` '
           'resolved nothing — E11 needs a real private https remote',
         );
         return;
@@ -208,8 +208,8 @@ void main() {
           tmpRoot.path,
           e11Env,
         );
-        final conf = h.runCuberun(
-          ['run', profile, '--', 'git', ...credOff, 'clone', url, confDir],
+        final conf = h.launchCubeSandbox(
+          ['launch', profile, '--', 'git', ...credOff, 'clone', url, confDir],
           cwd: tmpRoot.path,
           env: e11Env,
         );
@@ -256,19 +256,19 @@ void main() {
 /// Deterministic commit identity/dates for BOTH sides => identical shas
 /// => fingerprints comparable across confined/baseline.
 const Map<String, String> gitEnv = {
-  'GIT_AUTHOR_NAME': 'cuberun test',
-  'GIT_AUTHOR_EMAIL': 'cuberun@test.local',
-  'GIT_COMMITTER_NAME': 'cuberun test',
-  'GIT_COMMITTER_EMAIL': 'cuberun@test.local',
+  'GIT_AUTHOR_NAME': 'cube-sandbox test',
+  'GIT_AUTHOR_EMAIL': 'cube-sandbox@test.local',
+  'GIT_COMMITTER_NAME': 'cube-sandbox test',
+  'GIT_COMMITTER_EMAIL': 'cube-sandbox@test.local',
   'GIT_AUTHOR_DATE': '2005-04-07T22:13:13 +0000',
   'GIT_COMMITTER_DATE': '2005-04-07T22:13:13 +0000',
 };
 
 const ident = [
   '-c',
-  'user.name=cuberun test',
+  'user.name=cube-sandbox test',
   '-c',
-  'user.email=cuberun@test.local',
+  'user.email=cube-sandbox@test.local',
 ];
 
 /// One verb's scenario: argv batches run as `git <args>` in the repo dir,
@@ -546,8 +546,8 @@ h.RunOut _plain(List<String> args, String cwd, Map<String, String> env) {
 }
 
 h.RunOut _confinedGit(List<String> args, String cwd, String profile) {
-  return h.runCuberun(
-    ['run', profile, '--use-github', '--', 'git', ...args],
+  return h.launchCubeSandbox(
+    ['launch', profile, '--use-github', '--', 'git', ...args],
     cwd: cwd,
     env: gitEnv,
   );
@@ -566,12 +566,12 @@ final _authFailure = RegExp(
 );
 final _sandboxDenial = RegExp('Operation not permitted|sandbox|file-read');
 
-/// The cuberun repo itself (E11 private remote): CUBERUN_GH_TARGET_REPO >
+/// The cube-sandbox repo itself (E11 private remote): CUBE_SANDBOX_GH_TARGET_REPO >
 /// GITHUB_REPOSITORY (CI) > `gh repo view` in the checkout (dart test
 /// runs from the package root, which IS the repo). Null → loud skip.
 String? _targetRepo() {
   final direct =
-      Platform.environment['CUBERUN_GH_TARGET_REPO'] ??
+      Platform.environment['CUBE_SANDBOX_GH_TARGET_REPO'] ??
       Platform.environment['GITHUB_REPOSITORY'];
   if (direct != null && direct.trim().isNotEmpty) return direct.trim();
   final r = Process.runSync('gh', const [
