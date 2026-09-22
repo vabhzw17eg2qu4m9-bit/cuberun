@@ -134,42 +134,58 @@ spec:
     expect(argvTail(r), ['--resume', 'u1']);
   });
 
-  test('AC5: exit codes propagate unchanged with a tail present', () {
-    final home = Directory.systemTemp.createTempSync('cube-sandbox-home-');
-    addTearDown(() => home.deleteSync(recursive: true));
-    Map<String, String> env() => {'HOME': home.path};
-    expect(
-      h
-          .launchCubeSandbox(
-            ['launch', 'argvp', '__exit', '0', '--tail'],
-            cwd: proj,
-            env: env(),
-          )
-          .exit,
-      0,
-    );
-    expect(
-      h
-          .launchCubeSandbox(
-            ['launch', 'argvp', '__exit', '7', '--tail'],
-            cwd: proj,
-            env: env(),
-          )
-          .exit,
-      7,
-    );
-    expect(
-      h
-          .launchCubeSandbox(
-            ['launch', 'argvp', '__int', '--tail'],
-            cwd: proj,
-            env: env(),
-          )
-          .exit,
-      130,
-      reason: 'SIGINT => 128+2 (I2)',
-    );
-  });
+  test(
+    'E2E-6/AC5+AC7: exit codes forward verbatim under --wait (0 / 7 / 130)',
+    () {
+      final home = Directory.systemTemp.createTempSync('cube-sandbox-home-');
+      addTearDown(() => home.deleteSync(recursive: true));
+      Map<String, String> env() => {'HOME': home.path};
+      expect(
+        h
+            .launchCubeSandbox(
+              ['launch', '--wait', 'argvp', '__exit', '0'],
+              cwd: proj,
+              env: env(),
+            )
+            .exit,
+        0,
+      );
+      expect(
+        h
+            .launchCubeSandbox(
+              ['launch', '--wait', 'argvp', '__exit', '7'],
+              cwd: proj,
+              env: env(),
+            )
+            .exit,
+        7,
+      );
+      expect(
+        h
+            .launchCubeSandbox(
+              ['launch', '--wait', 'argvp', '__int'],
+              cwd: proj,
+              env: env(),
+            )
+            .exit,
+        130,
+        reason: 'SIGINT => 128+2 (I2)',
+      );
+      // Default mode is spawn-and-exit (issue #53): the same runs exit 0
+      // regardless of the harness's own code — spawn status only.
+      expect(
+        h
+            .launchCubeSandbox(
+              ['launch', 'argvp', '__exit', '7'],
+              cwd: proj,
+              env: env(),
+            )
+            .exit,
+        0,
+        reason: 'default launch exit = spawn status, not the harness code',
+      );
+    },
+  );
 
   test('AC3/I1: SBPL byte-identical with and without a tail', () {
     final home = Directory.systemTemp.createTempSync('cube-sandbox-home-');

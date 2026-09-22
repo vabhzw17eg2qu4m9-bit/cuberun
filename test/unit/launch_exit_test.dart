@@ -28,14 +28,17 @@ void main() {
     return p;
   }
 
-  test('spawn success exits 0 immediately — the child code is NOT ours', () async {
-    final code = await launchConfined(
-      profilePath: '/dev/null',
-      command: const [],
-      backend: backend('sleep 5\nexit 7'),
-    );
-    expect(code, 0, reason: 'exit = spawn status, not the child code (7)');
-  });
+  test(
+    'spawn success exits 0 immediately — the child code is NOT ours',
+    () async {
+      final code = await launchConfined(
+        profilePath: '/dev/null',
+        command: const [],
+        backend: backend('sleep 5\nexit 7'),
+      );
+      expect(code, 0, reason: 'exit = spawn status, not the child code (7)');
+    },
+  );
 
   test('backend ProcessException fails closed: 126 + diagnostic', () async {
     final diag = <String>[];
