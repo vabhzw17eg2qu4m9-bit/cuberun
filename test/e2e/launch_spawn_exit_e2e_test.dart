@@ -287,6 +287,7 @@ done
 
       final body =
           'trap \'printf trapped > "\$MARKDIR/INT"\' INT\n'
+          'printf ready > "\$MARKDIR/READY"\n'
           'sleep 8 &\n'
           'wait \$!\n'
           'printf done > "\$MARKDIR/DONE"\n';
@@ -300,6 +301,14 @@ done
       // only comes when the harness exits — draining before the kill
       // would find an EMPTY group).
       expect(await p.exitCode, 0, reason: 'launcher gone, group stays alive');
+      // And the trap must be INSTALLED before the signal fires: the
+      // harness publishes READY after `trap`, so an early kill cannot
+      // hit the default INT disposition during sh/sandbox-exec startup.
+      expect(
+        awaitFile('$proj/a5/READY'),
+        isTrue,
+        reason: 'harness trap installed',
+      );
       final g = p.pid; // pgid == launcher pid (setpgrp before exec)
       final kill1 = Process.runSync('kill', ['-s', 'INT', '-$g']);
       expect(kill1.exitCode, 0, reason: 'stderr: ${kill1.stderr}');
