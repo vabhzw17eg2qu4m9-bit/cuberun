@@ -398,7 +398,11 @@ done
       ]);
       final p = await startLauncher(['spawn7'], extraEnv: {'MARKDIR': proj});
       expect(await p.exitCode, 0);
-      expect(File('$proj/pid7.txt').existsSync(), isTrue);
+      expect(
+        awaitFile('$proj/pid7.txt'),
+        isTrue,
+        reason: 'harness publishes its pid after the launcher is gone',
+      );
 
       int? ppid;
       final deadline = DateTime.now().add(const Duration(seconds: 20));
