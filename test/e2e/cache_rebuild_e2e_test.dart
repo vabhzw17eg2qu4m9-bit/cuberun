@@ -225,7 +225,8 @@ spec:
           r'profile ([0-9a-f]{10})',
         ).firstMatch(second.stderr)![1]!;
         expect(key2, isNot(key1), reason: 'source change => new key10');
-        expect(second.stderr, contains('~/.codemie'));
+        // The banner expands grants against env HOME (no tilde spelling).
+        expect(second.stderr, contains('$home/.codemie'));
         expect(
           File(cred).existsSync(),
           isTrue,
