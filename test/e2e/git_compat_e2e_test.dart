@@ -209,7 +209,17 @@ void main() {
           e11Env,
         );
         final conf = h.launchCubeSandbox(
-          ['launch', profile, '--', 'git', ...credOff, 'clone', url, confDir],
+          [
+            'launch',
+            '--wait',
+            profile,
+            '--',
+            'git',
+            ...credOff,
+            'clone',
+            url,
+            confDir,
+          ],
           cwd: tmpRoot.path,
           env: e11Env,
         );
@@ -546,8 +556,10 @@ h.RunOut _plain(List<String> args, String cwd, Map<String, String> env) {
 }
 
 h.RunOut _confinedGit(List<String> args, String cwd, String profile) {
+  // Exit fidelity is the subject (confined == unconfined matrix), so the
+  // launch runs under --wait (issue #53: default exit = spawn status).
   return h.launchCubeSandbox(
-    ['launch', '--use-github', profile, '--', 'git', ...args],
+    ['launch', '--use-github', '--wait', profile, '--', 'git', ...args],
     cwd: cwd,
     env: gitEnv,
   );

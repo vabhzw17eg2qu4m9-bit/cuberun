@@ -85,8 +85,11 @@ void main() {
           environment: env,
         );
         for (final profile in _profiles) {
+          // Exit fidelity is the subject here (confined == unconfined), so
+          // the launch runs under --wait (issue #53: the default exit is
+          // the spawn status, not the harness's).
           final conf = h.launchCubeSandbox(
-            ['launch', '--use-github', profile, '--', 'gh', ...full],
+            ['launch', '--use-github', '--wait', profile, '--', 'gh', ...full],
             cwd: proj.path,
             env: env,
           );
@@ -145,7 +148,7 @@ void main() {
       );
       created.addAll(_issueNumbers(base.stdout as String));
       final conf = h.launchCubeSandbox(
-        ['launch', '--use-github', 'fa', '--', 'gh', ...args],
+        ['launch', '--use-github', '--wait', 'fa', '--', 'gh', ...args],
         cwd: proj.path,
         env: env,
       );
@@ -287,7 +290,15 @@ void main() {
         return;
       }
       final conf = h.launchCubeSandbox(
-        ['launch', '--use-github', 'fa', '--', 'gh', ...prArgs(branchConf)],
+        [
+          'launch',
+          '--use-github',
+          '--wait',
+          'fa',
+          '--',
+          'gh',
+          ...prArgs(branchConf),
+        ],
         cwd: proj.path,
         env: env,
       );

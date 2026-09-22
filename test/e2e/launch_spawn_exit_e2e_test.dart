@@ -108,20 +108,17 @@ done
     () async {
       final mark = '$proj/mark1.txt';
       writeProfile('spawn1', [
-        script('h1.sh', 'sleep 4\nprintf done > "\$MARK"\n'),
+        script('h1.sh', 'sleep 6\nprintf done > "\$MARK"\n'),
       ]);
       final p = await startLauncher(['spawn1'], extraEnv: {'MARK': mark});
-      final errOut = await p.stderr.transform(utf8.decoder).join();
-      expect(await p.exitCode, 0, reason: 'stderr: $errOut');
-      expect(
-        errOut,
-        contains('under cube-sandbox'),
-        reason: 'banner before exit',
-      );
+      // Order matters: the launcher's exit must be observed BEFORE any
+      // pipe join — the orphan harness holds the fds, so join() EOF only
+      // happens when the HARNESS exits.
+      expect(await p.exitCode, 0);
       expect(
         File(mark).existsSync(),
         isFalse,
-        reason: 'harness (sleep 4) must outlive the launcher',
+        reason: 'harness (sleep 6) must outlive the launcher',
       );
       expect(
         awaitFile(mark),
@@ -129,6 +126,13 @@ done
         reason: 'harness finishes after cube died',
       );
       expect(File(mark).readAsStringSync(), 'done');
+      // Only now drain: banner bytes are buffered; EOF at harness exit.
+      final errOut = await p.stderr.transform(utf8.decoder).join();
+      expect(
+        errOut,
+        contains('under cube-sandbox'),
+        reason: 'banner before exit',
+      );
     },
   );
 
@@ -165,10 +169,20 @@ done
   kernelTest(
     'E2E-3/AC3+F1: confinement survives the launcher; unconfined control writes',
     () async {
-      final evilC = '${tmp.path}/evil-confined';
-      final evilN = '${tmp.path}/evil-unconfined';
+      // The denied target must sit OUTSIDE every grant — notably OUTSIDE
+      // realpath($TMPDIR): systemTemp itself is a WRITE grant, so an evil
+      // dir under it would prove nothing. One level above it is granted
+      // to the user (the unconfined control can create it) but not to
+      // the profile.
+      final evilBase = Directory.systemTemp.parent.path;
+      final evilC = '$evilBase/${tmp.path.split('/').last}-evil-confined';
+      final evilN = '$evilBase/${tmp.path.split('/').last}-evil-unconfined';
       Directory(evilC).createSync();
       Directory(evilN).createSync();
+      addTearDown(() {
+        Directory(evilC).deleteSync(recursive: true);
+        Directory(evilN).deleteSync(recursive: true);
+      });
       final h3 = script(
         'h3.sh',
         'printf allowed > "\$MARKDIR/allowed.txt"\n'
@@ -183,9 +197,9 @@ done
         ['spawn3'],
         extraEnv: {'MARKDIR': proj, 'EVIL': evilC},
       );
+      expect(await p.exitCode, 0);
       await p.stdout.drain<void>();
       await p.stderr.drain<void>();
-      expect(await p.exitCode, 0);
       expect(
         awaitFile('$proj/done3.txt'),
         isTrue,
@@ -195,7 +209,7 @@ done
       expect(
         File('$evilC/evil.txt').existsSync(),
         isFalse,
-        reason: 'outside write denied WITHOUT a living launcher',
+        reason: 'write outside every grant denied WITHOUT a living launcher',
       );
 
       // Negative control: the identical command without the profile writes.
@@ -282,12 +296,15 @@ done
       // Positive: INT to the group after cube's exit reaches the trap.
       writeProfile('spawn5', [script('h5.sh', body)]);
       final p = await spawnIsolated('spawn5', '$proj/a5');
-      await p.stdout.drain<void>();
-      await p.stderr.drain<void>();
+      // Order matters: observe the launcher's exit FIRST (the pipe EOF
+      // only comes when the harness exits — draining before the kill
+      // would find an EMPTY group).
       expect(await p.exitCode, 0, reason: 'launcher gone, group stays alive');
       final g = p.pid; // pgid == launcher pid (setpgrp before exec)
       final kill1 = Process.runSync('kill', ['-s', 'INT', '-$g']);
       expect(kill1.exitCode, 0, reason: 'stderr: ${kill1.stderr}');
+      await p.stdout.drain<void>();
+      await p.stderr.drain<void>();
       expect(
         awaitFile('$proj/a5/DONE'),
         isTrue,
@@ -305,8 +322,6 @@ done
       ]);
       writeProfile('spawn5b', [script('h5b.sh', body)]);
       final q = await spawnIsolated('spawn5b', '$proj/b5');
-      await q.stdout.drain<void>();
-      await q.stderr.drain<void>();
       expect(await q.exitCode, 0);
       final kill2 = Process.runSync('kill', ['-s', 'INT', '-${foreign.pid}']);
       expect(
@@ -314,6 +329,8 @@ done
         0,
         reason: 'signal fired at the foreign group only',
       );
+      await q.stdout.drain<void>();
+      await q.stderr.drain<void>();
       expect(
         awaitFile('$proj/b5/DONE'),
         isTrue,
@@ -368,22 +385,49 @@ done
   kernelTest(
     'E2E-7/AC6+F4: the orphaned harness reparents to launchd (ppid 1)',
     () async {
+      // The harness publishes its own pid, then sleeps to give the test a
+      // window; the LIVE ppid is measured by `ps` from the UNCONFINED test
+      // process (ps under the profile is not reliable on newer macOS).
       writeProfile('spawn7', [
-        script('h7.sh', 'sleep 2\nps -o ppid= -p \$\$ > "\$MARK"\n'),
+        script(
+          'h7.sh',
+          'printf "\$\$" > "\$MARKDIR/pid7.txt"\n'
+              'sleep 8\n'
+              'printf done > "\$MARKDIR/done7.txt"\n',
+        ),
       ]);
-      final p = await startLauncher(
-        ['spawn7'],
-        extraEnv: {'MARK': '$proj/ppid7.txt'},
+      final p = await startLauncher(['spawn7'], extraEnv: {'MARKDIR': proj});
+      expect(await p.exitCode, 0);
+      expect(File('$proj/pid7.txt').existsSync(), isTrue);
+
+      int? ppid;
+      final deadline = DateTime.now().add(const Duration(seconds: 20));
+      while (DateTime.now().isBefore(deadline)) {
+        final pid = int.tryParse(
+          File('$proj/pid7.txt').readAsStringSync().trim(),
+        );
+        if (pid != null) {
+          final r = Process.runSync('ps', ['-o', 'ppid=', '-p', '$pid']);
+          ppid = int.tryParse((r.stdout as String).trim());
+          if (ppid != null) break;
+        }
+        if (File('$proj/done7.txt').existsSync()) break;
+        sleep(const Duration(milliseconds: 50));
+      }
+      expect(
+        ppid,
+        1,
+        reason:
+            'orphan reparents to launchd (F4; attribution only — '
+            'nothing polls or reaps)',
+      );
+      expect(
+        awaitFile('$proj/done7.txt'),
+        isTrue,
+        reason: 'harness survived the launcher',
       );
       await p.stdout.drain<void>();
       await p.stderr.drain<void>();
-      expect(await p.exitCode, 0);
-      expect(awaitFile('$proj/ppid7.txt'), isTrue);
-      expect(
-        File('$proj/ppid7.txt').readAsStringSync().trim(),
-        '1',
-        reason: 'attribution only — nothing polls or reaps',
-      );
     },
   );
 
