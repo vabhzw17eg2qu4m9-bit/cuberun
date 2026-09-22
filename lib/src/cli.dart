@@ -398,11 +398,19 @@ Future<int> _cmdProbe(
   }
 
   final profile = emitProfile(runtime);
-  stageWithProvenance(
+  final previous = stageWithProvenance(
     cacheDir: projectCacheDir(runtime.projDir),
     profile: profile,
     resolved: r.resolved,
   );
+  if (previous != null) {
+    // Issue #69: same warning contract as launch — the probe re-tied the
+    // cache to a changed source; never silent.
+    err(
+      '⚠  cache provenance refreshed for harness-${profile.key10}.sb '
+      '(was staged from: ${previous.detail})',
+    );
+  }
   final profilePath =
       '${projectCacheDir(runtime.projDir)}/harness-${profile.key10}.sb';
   for (final w in r.cacheWarnings) {

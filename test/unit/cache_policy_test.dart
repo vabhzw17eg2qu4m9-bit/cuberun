@@ -200,6 +200,13 @@ void main() {
       addTearDown(() => Process.runSync('chmod', ['644', sidecar.path]));
       expect(readSourceStamp(tmp.path, 'kperm'), isNull);
     });
+
+    test('non-UTF-8 corrupt sidecar reads as null, never throws (AC6)', () {
+      File(
+        sidecarPath(tmp.path, 'kbad'),
+      ).writeAsBytesSync([0xff, 0xfe, 0x00, 0x81, 0x9c]);
+      expect(readSourceStamp(tmp.path, 'kbad'), isNull);
+    });
   });
 
   group('shadowedCopies (E1 loudness)', () {

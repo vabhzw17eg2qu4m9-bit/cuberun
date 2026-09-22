@@ -22,15 +22,30 @@ void main() {
   // Directory.current inside the spawned binary reports the kernel's
   // /private/var spelling of system-temp paths; path assertions compare
   // against THESE (HOME-derived paths keep the env spelling instead).
-  late String projReal;
 
   setUp(() async {
-    tmp = await Directory.systemTemp.createTemp('cube-sandbox-e69-');
-    proj = '${tmp.path}/proj';
-    home = '${tmp.path}/home';
-    await Directory('$proj/.cube-sandbox').create(recursive: true);
-    await Directory('$home/.cube-sandbox').create(recursive: true);
-    projReal = Directory(proj).resolveSymbolicLinksSync();
+    // The fixture home must sit OUTSIDE the unconditional realpath($TMPDIR)
+    // rw grant (runtime.dart E2) — under systemTemp even the stale narrow
+    // profile authorizes the reporter's credential write, so E2E-1's
+    // denial can never trigger on a real kernel. Package .cache/ is
+    // gitignored and outside $TMPDIR on dev hosts and CI.
+    tmp = await Directory(
+      '${Directory.current.path}/.cache',
+    ).createTemp('cube-sandbox-e69-');
+    await Directory('${tmp.path}/proj/.cube-sandbox').create(recursive: true);
+    await Directory('${tmp.path}/home/.cube-sandbox').create(recursive: true);
+    proj = Directory('${tmp.path}/proj').resolveSymbolicLinksSync();
+    home = Directory('${tmp.path}/home').resolveSymbolicLinksSync();
+    // Kernel spelling is also the env spelling now; the guard below keeps
+    // the fixture outside the grant if anyone moves it back.
+    final tmpGrant = Directory(
+      Directory.systemTemp.path,
+    ).resolveSymbolicLinksSync();
+    expect(
+      home.startsWith(tmpGrant),
+      isFalse,
+      reason: 'fixture home must sit outside the unconditional \$TMPDIR grant',
+    );
   });
 
   tearDown(() async {
@@ -112,10 +127,7 @@ spec:
           env: env(),
         );
         expect(r.exit, 0, reason: r.stderr);
-        expect(
-          r.stdout,
-          contains('source : .cube-sandbox/ (project) ($projReal'),
-        );
+        expect(r.stdout, contains('source : .cube-sandbox/ (project) ($proj'));
         expect(r.stdout, contains('shadowed'));
         // Shadow paths derive from env HOME (the /var spelling here).
         expect(r.stdout, contains('$home/.cube-sandbox/codemie.yaml'));
@@ -139,7 +151,7 @@ spec:
       // --file echoes the path exactly as given (env HOME spelling).
       expect(r.stdout, contains('source : file ($home'));
       expect(r.stdout, contains('shadowed'));
-      expect(r.stdout, contains('$projReal/.cube-sandbox/codemie.yaml'));
+      expect(r.stdout, contains('$proj/.cube-sandbox/codemie.yaml'));
     });
 
     test('identical copies are NOT shadow noise (negative control)', () {

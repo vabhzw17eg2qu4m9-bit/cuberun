@@ -55,6 +55,10 @@ SourceStamp? readSourceStamp(String cacheDir, String key10) {
     parts = f.readAsStringSync().trim().split('  ');
   } on io.FileSystemException {
     return null;
+  } on FormatException {
+    // Non-UTF-8 garbage: as unreadable — fail-closed rebuild, never a
+    // raw crash (issue #69 AC6).
+    return null;
   }
   if (parts.isEmpty || parts.first.isEmpty) return null;
   return (fp: parts.first, detail: parts.skip(1).join('  '));
