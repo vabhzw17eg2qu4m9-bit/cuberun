@@ -27,6 +27,7 @@ cube-sandbox show pi                    # rw/ro/denied banner
 cube-sandbox sbpl pi                    # exact deterministic profile text
 cube-sandbox new myh --command myh --agent-root ~/.myh
 cube-sandbox probe pi                   # self-checks FROM INSIDE the profile
+cube-sandbox clean                      # wipe <cwd>/.cube-sandbox/cache (run between sessions)
 ```
 
 ## Confinement model (Layer 0)
@@ -75,6 +76,35 @@ Strict parse: any unknown key at any level fails naming the YAML path.
 Resolution: `--file` > `<cwd>/.cube-sandbox/<name>.yaml` > `~/.cube-sandbox/` >
 preset. Built-in presets: `fa` (`~/.fah`), `omp` (`~/.omp`),
 `pi` (`~/.pi`, widened) — parsed by the same parser as user files.
+
+## Profile cache (rebuild, provenance, clean)
+
+Every launch re-resolves the manifest and re-emits the profile; staged
+files are content-addressed (`key10` = first 10 hex of md5 of the profile
+text), so **any change to the resolved configuration ⇒ a different key10 ⇒
+the next launch runs the current configuration** — a stale `.sb` can never
+be picked when the source that produced it changed. Each staged
+`harness-<key10>.sb` keeps a `.src` provenance stamp beside it (a
+fingerprint of the resolved source document); if the same key is ever
+re-staged from a changed source, launch says so loudly:
+
+```
+⚠  cache provenance refreshed for harness-<key10>.sb (was staged from: …)
+```
+
+If the same profile stem exists in more than one resolution location
+(project `.cube-sandbox/` and user `~/.cube-sandbox/`) with **differing**
+content, `launch`/`show`/`sbpl` print a shadow warning naming the losing
+copy — the banner `source :` line always names the file that actually
+launches. Identical copies are not noise.
+
+`cube-sandbox clean` deletes `<cwd>/.cube-sandbox/cache/` (every staged
+profile + stamp). **Run it between sessions**: different `--use-*` sets
+legitimately keep several keys live at once, so there is deliberately no
+launch-time GC — the next launch simply re-stages what it needs. An
+unreadable or corrupt cache file is rebuilt in place (atomic rename),
+never crashes the launch and never lets the harness run unconfined
+(fail-closed 126 is the floor).
 
 ## Service grants (`--use-*`)
 

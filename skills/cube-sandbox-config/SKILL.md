@@ -87,16 +87,26 @@ parser is the law. Full reference: `docs/config.md` in the cube-sandbox repo.
    ran) and the harness keeps running confined on its own. `--wait`
    (before the profile) blocks and forwards the harness exit code
    (signal n ⇒ 128+n) instead.
-5. **Probe.** `cube-sandbox probe <name>` self-checks the boundary FROM
+5. **Cache semantics (rebuild is automatic).** Launches stage
+   `.cube-sandbox/cache/harness-<key10>.sb`; any manifest edit ⇒ a new
+   key10 ⇒ the NEXT launch rebuilds and runs the current configuration —
+   never a stale profile. Warnings you may see: `cache provenance
+   refreshed` (the same key was re-staged from a changed source) and
+   `same-stem profile shadowed` (another `<stem>.yaml` exists with
+   DIFFERENT content — the `source :` banner line names the winner; edit
+   the winning file or remove the stale copy). `cube-sandbox clean` wipes
+   the project's staged cache — run it BETWEEN sessions (no launch-time
+   GC: several keys may be live at once); the next launch re-stages.
+6. **Probe.** `cube-sandbox probe <name>` self-checks the boundary FROM
    INSIDE the profile (writes outside grants denied, project rw works,
    network open). Exit `0` = confined and working; `1` = broken — do
    not hand back a profile that fails probe.
-6. **Service grants.** Add `--use-github` (ro `~/.config/gh`,
+7. **Service grants.** Add `--use-github` (ro `~/.config/gh`,
    `~/.gitconfig`), `--use-gitlab` (ro `~/.config/glab`,
    `~/.gitconfig`, dedups), `--use-nvm` (ro `~/.nvm`) at run time:
    `cube-sandbox launch --use-github <name>` (options precede the
    profile). Flags union + dedup; unknown
    ones fail loudly listing the catalog. To make grants permanent for a
    profile, put the folders in `extraRead`/`extraWrite` instead.
-7. **Report.** File touched, keys changed, grants added (rw vs ro),
+8. **Report.** File touched, keys changed, grants added (rw vs ro),
    `sbpl` + `probe` results, and how to launch.

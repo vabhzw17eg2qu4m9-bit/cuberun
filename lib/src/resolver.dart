@@ -37,7 +37,12 @@ enum HarnessSource {
 /// A resolved harness + its provenance.
 final class ResolvedHarness {
   /// Creates a resolution result.
-  const ResolvedHarness({required this.spec, required this.source, this.path});
+  const ResolvedHarness({
+    required this.spec,
+    required this.source,
+    this.path,
+    this.sourceText,
+  });
 
   /// The parsed spec (name keyed on the filename stem for file sources).
   final HarnessSpec spec;
@@ -47,6 +52,11 @@ final class ResolvedHarness {
 
   /// File path (null for presets).
   final String? path;
+
+  /// The raw manifest text this resolution consumed (issue #69): the
+  /// cache-provenance and shadow checks fingerprint THIS, so a changed
+  /// or shadowed source is detectable even when the emit is not.
+  final String? sourceText;
 }
 
 /// One `cube-sandbox list` row.
@@ -110,32 +120,21 @@ final class HarnessResolver {
       if (!f.existsSync()) {
         throw ConfigException('--file $file: not found');
       }
-      return ResolvedHarness(
-        spec: _parseFile(f),
-        source: HarnessSource.file,
-        path: file,
-      );
+      return _fromFile(f, HarnessSource.file);
     }
     final project = io.File('$cwd/.cube-sandbox/$name.yaml');
     if (project.existsSync()) {
-      return ResolvedHarness(
-        spec: _parseFile(project),
-        source: HarnessSource.project,
-        path: project.path,
-      );
+      return _fromFile(project, HarnessSource.project);
     }
     final user = io.File('$home/.cube-sandbox/$name.yaml');
     if (user.existsSync()) {
-      return ResolvedHarness(
-        spec: _parseFile(user),
-        source: HarnessSource.user,
-        path: user.path,
-      );
+      return _fromFile(user, HarnessSource.user);
     }
     if (HarnessPresets.has(name)) {
       return ResolvedHarness(
         spec: HarnessPresets.load(name),
         source: HarnessSource.preset,
+        sourceText: HarnessPresets.manifests[name],
       );
     }
     throw ConfigException(
@@ -156,6 +155,7 @@ final class HarnessResolver {
     return ResolvedHarness(
       spec: HarnessSpec.fromYamlText(yaml, sourcePath: '<inline yaml>'),
       source: HarnessSource.yaml,
+      sourceText: yaml,
     );
   }
 
@@ -189,23 +189,31 @@ final class HarnessResolver {
   }
 
   /// Parses a manifest file, keying the spec name on the FILENAME stem
-  /// (E8); strict-parse failures name the file in the error.
-  HarnessSpec _parseFile(io.File f) {
+  /// (E8); strict-parse failures name the file in the error. The raw
+  /// text rides along as provenance (issue #69).
+  ResolvedHarness _fromFile(io.File f, HarnessSource source) {
     final stem = f.path.split('/').last.replaceAll(RegExp(r'\.yaml$'), '');
     final text = f.readAsStringSync();
     final spec = HarnessSpec.fromYamlText(text, sourcePath: f.path);
-    if (spec.name == stem) return spec;
-    // E8: display/resolution keys on the stem, not metadata.name.
-    return HarnessSpec(
-      name: stem,
-      description: spec.description,
-      command: spec.command,
-      agentRoot: spec.agentRoot,
-      agentRootEnv: spec.agentRootEnv,
-      widenToDotParent: spec.widenToDotParent,
-      extraRead: spec.extraRead,
-      extraWrite: spec.extraWrite,
-      network: spec.network,
+    final rekeyed = spec.name == stem
+        ? spec
+        // E8: display/resolution keys on the stem, not metadata.name.
+        : HarnessSpec(
+            name: stem,
+            description: spec.description,
+            command: spec.command,
+            agentRoot: spec.agentRoot,
+            agentRootEnv: spec.agentRootEnv,
+            widenToDotParent: spec.widenToDotParent,
+            extraRead: spec.extraRead,
+            extraWrite: spec.extraWrite,
+            network: spec.network,
+          );
+    return ResolvedHarness(
+      spec: rekeyed,
+      source: source,
+      path: f.path,
+      sourceText: text,
     );
   }
 

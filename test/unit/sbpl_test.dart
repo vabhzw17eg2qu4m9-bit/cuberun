@@ -1,3 +1,4 @@
+import 'package:cube_sandbox/src/harness_manifest.dart';
 import 'package:cube_sandbox/src/runtime.dart';
 import 'package:cube_sandbox/src/sbpl.dart';
 import 'package:test/test.dart';
@@ -47,6 +48,98 @@ void main() {
       emitProfile(rt(tmp: '/private/var/folders/zz/T9')).key10,
       isNot(base),
     );
+  });
+
+  // Issue #69 UT-1 — the EMIT-INPUT chain is key-sensitive at the SPEC
+  // level too: every enumerated manifest field (command, agentRootEnv,
+  // widenToDotParent, env knobs) one-field-diffed => different key10.
+  // `network` is v1-pinned to `open` (parser pin, no semantic variation).
+  group('spec-level key sensitivity (issue #69 UT-1)', () {
+    const baseSpec = HarnessSpec(
+      name: 'sens',
+      command: ['/usr/bin/true'],
+      agentRoot: '~/.agent69',
+    );
+
+    HarnessRuntime resolve(
+      HarnessSpec spec, {
+      Map<String, String> env2 = const {},
+    }) => resolveRuntime(
+      spec,
+      services: const {},
+      cwd: '/Users/dev/proj',
+      home: '/Users/dev',
+      env: env2,
+    );
+
+    test('command change => different key10', () {
+      final other = resolve(
+        const HarnessSpec(
+          name: 'sens',
+          command: ['/bin/echo'],
+          agentRoot: '~/.agent69',
+        ),
+      );
+      expect(
+        emitProfile(other).key10,
+        isNot(emitProfile(resolve(baseSpec)).key10),
+      );
+    });
+
+    test('agentRootEnv override engaging => different key10', () {
+      final withEnv = resolve(
+        const HarnessSpec(
+          name: 'sens',
+          command: ['/usr/bin/true'],
+          agentRoot: '~/.agent69',
+          agentRootEnv: 'CUBE_UT_69_ROOT',
+        ),
+        env2: {'CUBE_UT_69_ROOT': '~/.other69'},
+      );
+      final varUnset = resolve(
+        const HarnessSpec(
+          name: 'sens',
+          command: ['/usr/bin/true'],
+          agentRoot: '~/.agent69',
+          agentRootEnv: 'CUBE_UT_69_ROOT',
+        ),
+      );
+      final base = resolve(baseSpec);
+      // Override engaged: different root, different key. Unset: same facts,
+      // same key (the override is only an input when it fires).
+      expect(emitProfile(withEnv).key10, isNot(emitProfile(base).key10));
+      expect(emitProfile(varUnset).key10, emitProfile(base).key10);
+    });
+
+    test('widenToDotParent => different key10', () {
+      final widened = resolve(
+        const HarnessSpec(
+          name: 'sens',
+          command: ['/usr/bin/true'],
+          agentRoot: '~/.dot69/agent',
+          widenToDotParent: true,
+        ),
+      );
+      final narrow = resolve(
+        const HarnessSpec(
+          name: 'sens',
+          command: ['/usr/bin/true'],
+          agentRoot: '~/.dot69/agent',
+        ),
+      );
+      expect(emitProfile(widened).key10, isNot(emitProfile(narrow).key10));
+    });
+
+    test('env-knob grant added between runs => different key10 (E6)', () {
+      final knob = resolve(
+        baseSpec,
+        env2: {'CUBE_SANDBOX_EXTRA_WRITE': '~/.knob69'},
+      );
+      expect(
+        emitProfile(knob).key10,
+        isNot(emitProfile(resolve(baseSpec)).key10),
+      );
+    });
   });
 
   test('header: version, allow default, open network (E1)', () {

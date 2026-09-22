@@ -156,6 +156,45 @@ facts at launch:
   byte-identical profile text and the same `key10` content id; any
   grant change ⇒ different `key10`.
 
+## Profile cache: keys, provenance, clean
+
+Launch stages the emitted profile at
+`<cwd>/.cube-sandbox/cache/harness-<key10>.sb` (`key10` = first 10 hex of
+md5 of the profile text) with an atomic rename; identical content is never
+rewritten (mtime-stable). Invalidation is source-driven and unskippable:
+
+- **Any change to the resolved configuration** — every manifest field
+  (`command`, `agentRoot`, `agentRootEnv` override, `widenToDotParent`,
+  `extraRead`, `extraWrite`), any `--use-*` service flag, the
+  `CUBE_SANDBOX_EXTRA_READ`/`_WRITE` env knobs, even a moved `$TMPDIR` —
+  changes the emitted text ⇒ **new key10 ⇒ the next launch stages and runs
+  the fresh profile**. No launch ever runs a profile that predates its
+  source.
+- **Provenance stamps**: each staged profile has a sibling
+  `harness-<key10>.src` recording which source document built it
+  (`sha256(label · path · raw text)  label (path)`). If the same key is
+  re-staged from a changed source (e.g. a comment/`description`-only edit
+  that does not move the key), launch warns:
+  `⚠ cache provenance refreshed for harness-<key10>.sb (was staged from: …)`.
+- **Same-stem shadows are loud**: a profile with the same stem in more
+  than one chain location (project `.cube-sandbox/`, user
+  `~/.cube-sandbox/`) with differing content triggers a warning naming the
+  shadowed (losing) copy on every `launch`/`show`/`sbpl`; the banner
+  `source :` line always names the winner. Resolution precedence itself is
+  unchanged — drift is made visible, not re-ordered.
+- **Corruption is fail-closed, never fatal**: garbage content under a live
+  key is rewritten on the next launch; an unreadable file (permissions) is
+  rebuilt the same way. If staging itself fails, the launch refuses
+  (fail-closed) — the harness never runs without its profile.
+
+`cube-sandbox clean` deletes `<cwd>/.cube-sandbox/cache/` — every staged
+profile and stamp. **Run it between sessions.** There is deliberately no
+launch-time GC: different `--use-*` flag sets legitimately keep several
+keys live at once, and a running session executes its staged `.sb` from
+disk for the whole session — a deleted cache dir does not affect an
+already-running harness (the profile is read at spawn), and the next
+launch re-stages whatever it needs.
+
 ## Service grants (`--use-*`)
 
 Services GRANT FOLDERS; they never inspect, allow or forbid commands —

@@ -4,6 +4,8 @@
 library;
 
 export 'src/exceptions.dart';
+export 'src/banner.dart';
+export 'src/cache_policy.dart';
 export 'src/harness_manifest.dart';
 export 'src/launcher.dart';
 export 'src/paths.dart';
