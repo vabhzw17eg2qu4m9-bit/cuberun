@@ -9,6 +9,8 @@ library;
 import 'dart:io' as io;
 
 import 'exceptions.dart';
+import 'banner.dart';
+import 'cache_policy.dart';
 import 'launch_argv.dart';
 import 'launcher.dart';
 import 'preflight.dart';
@@ -48,6 +50,11 @@ Usage:
       Print the exact deterministic kernel profile text.
   cube-sandbox new <name> --command <cmd> --agent-root <path>
       Scaffold .cube-sandbox/<name>.yaml (strict round-trip verified).
+  cube-sandbox clean
+      Delete <cwd>/.cube-sandbox/cache/ — every staged
+      harness-<key10>.sb (+ its .src provenance stamp). Run BETWEEN
+      sessions: different --use-* sets legitimately keep several keys
+      live at once; the next launch re-stages whatever it needs.
   cube-sandbox probe <profile> [--file <f> | --yaml <text|->] [--use-<service>]...
       Self-check confinement FROM INSIDE the profile; exit 0/1.
 
@@ -92,6 +99,8 @@ Future<int> runCli(
         return await _cmdSbpl(rest, out, err);
       case 'new':
         return _cmdNew(rest, out, err);
+      case 'clean':
+        return _cmdClean(out);
       case 'probe':
         return await _cmdProbe(rest, out, err);
       default:
@@ -192,10 +201,14 @@ _Opts _scanOpts(
   return _Opts(positional, file, yaml, services, command, flags);
 }
 
-Future<({ResolvedHarness resolved, HarnessRuntime runtime})> _resolveForRun(
-  _Opts opts,
-  String verb,
-) async {
+Future<
+  ({
+    ResolvedHarness resolved,
+    HarnessRuntime runtime,
+    List<String> cacheWarnings,
+  })
+>
+_resolveForRun(_Opts opts, String verb) async {
   if (opts.positional.isEmpty) {
     throw ConfigException('$verb <profile>: profile name required');
   }
@@ -215,7 +228,14 @@ Future<({ResolvedHarness resolved, HarnessRuntime runtime})> _resolveForRun(
     cwd: cwd,
     home: home,
   );
-  return (resolved: resolved, runtime: runtime);
+  // Issue #69 loudness: a DIFFERING same-stem copy in another chain
+  // location is named — an edited manifest can never be silently ignored.
+  final cacheWarnings = shadowWarnings(
+    resolved,
+    projectDir: '$cwd/.cube-sandbox',
+    userDir: '$home/.cube-sandbox',
+  );
+  return (resolved: resolved, runtime: runtime, cacheWarnings: cacheWarnings);
 }
 
 void _printWarnings(HarnessRuntime rt, void Function(String) err) {
@@ -248,11 +268,20 @@ Future<int> _cmdLaunch(List<String> args, void Function(String) err) async {
   }
 
   final profile = emitProfile(runtime);
-  final profilePath = stageProfile(
+  final profilePath =
+      '${projectCacheDir(runtime.projDir)}/harness-${profile.key10}.sb';
+  final previous = stageWithProvenance(
     cacheDir: projectCacheDir(runtime.projDir),
-    text: profile.text,
-    key10: profile.key10,
+    profile: profile,
+    resolved: resolved,
   );
+  if (previous != null) {
+    // Issue #69: same key10, changed source — the cache was re-tied.
+    err(
+      '⚠  cache provenance refreshed for harness-${profile.key10}.sb '
+      '(was staged from: ${previous.detail})',
+    );
+  }
 
   final command = opts.command.isNotEmpty
       ? opts.command
@@ -262,7 +291,14 @@ Future<int> _cmdLaunch(List<String> args, void Function(String) err) async {
     return 126;
   }
 
-  _banner(resolved, runtime, profile.key10, profilePath, err);
+  _banner(
+    resolved,
+    runtime,
+    profile.key10,
+    profilePath,
+    err,
+    warnings: r.cacheWarnings,
+  );
   return launchConfined(
     profilePath: profilePath,
     command: [...command, ...split.tail],
@@ -290,7 +326,14 @@ Future<int> _cmdShow(
   final r = await _resolveForRun(opts, 'show');
   final runtime = r.runtime;
   final profile = emitProfile(runtime);
-  _banner(r.resolved, runtime, profile.key10, null, out);
+  _banner(
+    r.resolved,
+    runtime,
+    profile.key10,
+    null,
+    out,
+    warnings: r.cacheWarnings,
+  );
   return 0;
 }
 
@@ -302,6 +345,9 @@ Future<int> _cmdSbpl(
   final opts = _scanOpts(args, const {});
   final r = await _resolveForRun(opts, 'sbpl');
   _printWarnings(r.runtime, err);
+  for (final w in r.cacheWarnings) {
+    err('⚠  $w');
+  }
   io.stdout.write(emitProfile(r.runtime).text);
   return 0;
 }
@@ -352,11 +398,16 @@ Future<int> _cmdProbe(
   }
 
   final profile = emitProfile(runtime);
-  final profilePath = stageProfile(
+  stageWithProvenance(
     cacheDir: projectCacheDir(runtime.projDir),
-    text: profile.text,
-    key10: profile.key10,
+    profile: profile,
+    resolved: r.resolved,
   );
+  final profilePath =
+      '${projectCacheDir(runtime.projDir)}/harness-${profile.key10}.sb';
+  for (final w in r.cacheWarnings) {
+    err('⚠  $w');
+  }
   final home = io.Platform.environment['HOME'] ?? '/';
   final report = await probeHarness(
     runtime: runtime,
@@ -382,36 +433,39 @@ void _banner(
   HarnessRuntime runtime,
   String key10,
   String? profilePath,
-  void Function(String) sink,
-) {
-  final src = resolved.path == null
-      ? resolved.source.label
-      : '${resolved.source.label} (${resolved.path})';
-  sink(
-    '⛨ ${resolved.spec.name} under cube-sandbox '
-    '(profile $key10${profilePath == null ? '' : ': $profilePath'})',
-  );
-  sink('   source : $src');
-  sink(
-    '   rw     : ${runtime.projDir} · ${runtime.agentRoot} · ${runtime.tmp}'
-    '${runtime.extraWrite.isEmpty ? '' : ' · ${runtime.extraWrite.join(' · ')}'}',
-  );
-  sink(
-    '   ro     : system dirs'
-    '${runtime.runtimeDirs.isEmpty ? '' : ' · runtime (${runtime.runtimeDirs.join(' · ')})'}'
-    '${runtime.extraRead.isEmpty ? '' : ' · ${runtime.extraRead.join(' · ')}'}',
-  );
-  sink(
-    '   denied : /Users /private/var /Volumes /Network /home /net '
-    '(except grants above — blanket read-deny unbuildable, E1) · '
-    'all writes outside rw · network OPEN (cubes deny net inside)',
-  );
-  if (runtime.services.isNotEmpty) {
-    final used = runtime.services.toList()..sort();
-    final joined = used.join(', ');
-    sink('   use    : $joined');
+  void Function(String) sink, {
+  Iterable<String> warnings = const [],
+}) {
+  for (final line in bannerLines(
+    resolved: resolved,
+    runtime: runtime,
+    key10: key10,
+    profilePath: profilePath,
+    warnings: warnings,
+  )) {
+    sink(line);
   }
-  for (final w in runtime.warnings) {
-    sink('⚠  $w');
+}
+
+/// `clean`: wipe `<cwd>/.cube-sandbox/cache/` — every staged profile and
+/// its provenance stamp (issue #69 AC3). Run between sessions: distinct
+/// `--use-*` sets legitimately keep several keys live at once, so there
+/// is deliberately no launch-time GC; the next launch re-stages freely.
+int _cmdClean(void Function(String) out) {
+  final dir = io.Directory('${io.Directory.current.path}/.cube-sandbox/cache');
+  if (!dir.existsSync()) {
+    out('nothing to clean (${dir.path} does not exist)');
+    return 0;
   }
+  final staged = dir
+      .listSync()
+      .whereType<io.File>()
+      .where((e) => RegExp(r'harness-[0-9a-f]{10}\.sb$').hasMatch(e.path))
+      .length;
+  dir.deleteSync(recursive: true);
+  out(
+    'cleaned $staged staged profile(s) from ${dir.path} '
+    '(run between sessions; the next launch re-stages)',
+  );
+  return 0;
 }

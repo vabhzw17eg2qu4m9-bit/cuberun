@@ -52,6 +52,30 @@ void main() {
     );
   });
 
+  test(
+    'unreadable staged file (chmod 000) is rebuilt, never crashes (#69)',
+    () {
+      final path = stageProfile(
+        cacheDir: tmp.path,
+        text: 'v1\n',
+        key10: 'kperm',
+      );
+      Process.runSync('chmod', ['000', path]);
+      addTearDown(() => Process.runSync('chmod', ['-R', 'u+rwX', tmp.path]));
+      // Identical text must still come back readable: unreadable == rebuild.
+      final again = stageProfile(
+        cacheDir: tmp.path,
+        text: 'v1\n',
+        key10: 'kperm',
+      );
+      expect(again, path);
+      expect(File(path).readAsStringSync(), 'v1\n');
+      // And a drifted rewrite works over the unreadable file too.
+      stageProfile(cacheDir: tmp.path, text: 'v2\n', key10: 'kperm');
+      expect(File(path).readAsStringSync(), 'v2\n');
+    },
+  );
+
   test('no .tmp litter left behind', () {
     stageProfile(cacheDir: tmp.path, text: 'x\n', key10: 'k3', pid: 999);
     final litter = Directory(

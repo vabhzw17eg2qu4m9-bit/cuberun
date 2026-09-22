@@ -28,7 +28,17 @@ String stageProfile({
   }
   final finalPath = '${dir.path}/harness-$key10.sb';
   final file = io.File(finalPath);
-  if (file.existsSync() && file.readAsStringSync() == text) {
+  var stale = true;
+  if (file.existsSync()) {
+    try {
+      stale = file.readAsStringSync() != text;
+    } on io.FileSystemException {
+      // Unreadable (perms/corruption) under a live key: rebuild via the
+      // atomic-rename path — never a raw crash, never unconfined (#69 AC5).
+      stale = true;
+    }
+  }
+  if (!stale) {
     return finalPath; // identical content — never rewritten (E7)
   }
   final tmpPath = '${dir.path}/harness-$key10.sb.tmp.${pid ?? io.pid}';

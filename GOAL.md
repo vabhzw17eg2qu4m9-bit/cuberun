@@ -79,7 +79,8 @@ cube-sandbox launch pi
   │                                            runtime dirs from PATH+shebang)
   ├─ SbplProfile ───────► deterministic SBPL (sorted rules, both spellings,
   │                                            md5-10 content key)
-  ├─ ProfileStage ──────► .cube-sandbox/cache/harness-<key10>.sb (atomic rename)
+  ├─ ProfileStage ──────► .cube-sandbox/cache/harness-<key10>.sb (atomic rename;
+  │                                            .src provenance stamp, issue #69)
   ├─ Preflight ─────────► sandbox-exec probe (fail-closed ⇒ exit 126)
   └─ Launcher ──────────► sandbox-exec -f <sb> <command…> (spawn-and-exit;
                                                  --wait = exit passthrough)
@@ -400,7 +401,14 @@ Merge rule: **a red `integration` or `build` job blocks merge even when
   130, not cube-sandbox's own exit; UT on the mapping.
 - **E7 — stale staged profiles.** Content-keyed filenames make
   collisions impossible; identical text is not rewritten (mtime
-  stable); old keys accumulate harmlessly under the gitignored cache.
+  stable). Superseded keys are NOT silently harmless (issue #69): each
+  staged profile carries a `.src` provenance stamp so a changed source
+  under a live key is loud, a differing same-stem copy in another chain
+  location is named in a shadow warning, an unreadable/corrupt cache
+  file is rebuilt (never a raw crash, never an unconfined run), and
+  `cube-sandbox clean` reclaims superseded keys BETWEEN sessions — no
+  launch-time GC, because sessions with different `--use-*` sets keep
+  several keys live at once.
 - **E8 — profile file with mismatched `metadata.name`** vs filename:
   resolution keys on the FILENAME stem; listings display under the same
   stem so what lists is what launches.
