@@ -82,6 +82,11 @@ parser is the law. Full reference: `docs/config.md` in the cube-sandbox repo.
    cube-sandbox launch --use-github <name>     # service grants BEFORE the profile
    cube-sandbox launch omp --resume <id>       # args AFTER the profile go to the harness
    ```
+   Launch is spawn-and-exit: cube-sandbox exits 0 once the confined
+   harness is running (exit = spawn status; 126 = fail-closed, nothing
+   ran) and the harness keeps running confined on its own. `--wait`
+   (before the profile) blocks and forwards the harness exit code
+   (signal n ⇒ 128+n) instead.
 5. **Probe.** `cube-sandbox probe <name>` self-checks the boundary FROM
    INSIDE the profile (writes outside grants denied, project rw works,
    network open). Exit `0` = confined and working; `1` = broken — do

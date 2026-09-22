@@ -1,8 +1,9 @@
 /// cube-sandbox CLI: `launch` · `list` · `show` · `sbpl` · `new` · `probe`.
 ///
-/// Exit codes: 0 ok · 1 probe failure · 2 config error · 64 usage ·
-/// 126 fail-closed backend/spawn · otherwise the child's own code
-/// (signal n => 128+n).
+/// Exit codes: 0 ok — for launch, spawn success: the confined harness is
+/// running and outlives cube-sandbox (spawn-and-exit, #53) · 1 probe
+/// failure · 2 config error · 64 usage · 126 fail-closed backend/spawn ·
+/// under `launch --wait`: the harness's own code (signal n => 128+n).
 library;
 
 import 'dart:io' as io;
@@ -28,12 +29,17 @@ cube-sandbox $kCubeSandboxVersion — kernel-confined launcher for AI harnesses
 Usage:
   cube-sandbox launch [options] <profile> [args…] [-- <command…>]
       Launch a command (default: the profile's own) inside the Layer-0
-      kernel profile. Options (--file/--yaml/--use-*) precede the
-      profile; everything AFTER it is the harness's argv, forwarded
-      verbatim (order preserved). Service grants: --use-github,
-      --use-gitlab, --use-nvm. --yaml passes the manifest inline
-      ('-' reads stdin); --yaml + --file together is an error.
-      `-- <command…>` overrides the harness command.
+      kernel profile. Spawn-and-exit: once the confined harness is
+      running, cube-sandbox exits 0 (the exit code is the spawn status,
+      not the harness's) — the harness keeps the terminal, its fds and
+      the kernel boundary on its own. --wait blocks for the harness
+      instead and forwards its exit code (signal n => 128+n). Options
+      (--file/--yaml/--use-*) precede the profile; everything AFTER it
+      is the harness's argv, forwarded verbatim (order preserved).
+      Service grants: --use-github, --use-gitlab, --use-nvm. --yaml
+      passes the manifest inline ('-' reads stdin); --yaml + --file
+      together is an error. `-- <command…>` overrides the harness
+      command.
   cube-sandbox list
       Enumerate profiles: presets + project .cube-sandbox/ + user ~/.cube-sandbox/.
   cube-sandbox show <profile> [--file <f> | --yaml <text|->] [--use-<service>]...
@@ -50,9 +56,10 @@ Env knobs:
   CUBE_SANDBOX_EXTRA_WRITE  colon-separated read-write grants (~ ok;
                        ~/.ssh / ~/.gnupg / ~/Library/Keychains NEVER)
 
-Exit codes: 0 ok · 1 probe failed · 2 config error · 64 usage ·
-126 fail-closed (backend missing/rejecting) · else child's code
-(signal n => 128+n).''';
+Exit codes: 0 ok (launch: spawn success — the harness outlives us) ·
+1 probe failed · 2 config error · 64 usage ·
+126 fail-closed (backend missing/rejecting) ·
+--wait: the harness's own code (signal n => 128+n).''';
 
 /// Parses [args], runs the verb, returns the process exit code.
 Future<int> runCli(
@@ -125,8 +132,14 @@ final class _Opts {
 }
 
 /// Scans verb args: positional words, `--file <f>`, `--yaml <text|->`,
-/// `--use-<x>…`, `--key <value>` pairs, and everything after a bare `--`.
-_Opts _scanOpts(List<String> args, Set<String> valueFlags) {
+/// `--use-<x>…`, `--key <value>` pairs, bare boolean [boolFlags] (stored
+/// in the flags map with an empty value), and everything after a bare
+/// `--`.
+_Opts _scanOpts(
+  List<String> args,
+  Set<String> valueFlags, {
+  Set<String> boolFlags = const {},
+}) {
   final positional = <String>[];
   final flags = <String, String>{};
   String? file;
@@ -158,6 +171,10 @@ _Opts _scanOpts(List<String> args, Set<String> valueFlags) {
         );
       }
       yaml = args[++i];
+      continue;
+    }
+    if (a.startsWith('--') && boolFlags.contains(a.substring(2))) {
+      flags[a.substring(2)] = ''; // boolean flag: presence marker
       continue;
     }
     if (a.startsWith('--') && valueFlags.contains(a.substring(2))) {
@@ -213,7 +230,10 @@ void _printWarnings(HarnessRuntime rt, void Function(String) err) {
 
 Future<int> _cmdLaunch(List<String> args, void Function(String) err) async {
   final split = splitLaunchArgv(args);
-  final opts = _scanOpts(split.args, const {});
+  // `--wait` is launch-only; strict verbs stay strict. splitLaunchArgv
+  // keeps everything after the profile OUT of here — a `--wait` there is
+  // the harness's argv, forwarded verbatim.
+  final opts = _scanOpts(split.args, const {}, boolFlags: const {'wait'});
   final r = await _resolveForRun(opts, 'launch');
   final resolved = r.resolved;
   final runtime = r.runtime;
@@ -246,6 +266,7 @@ Future<int> _cmdLaunch(List<String> args, void Function(String) err) async {
   return launchConfined(
     profilePath: profilePath,
     command: [...command, ...split.tail],
+    wait: opts.flags.containsKey('wait'),
     onFailClosed: err,
   );
 }

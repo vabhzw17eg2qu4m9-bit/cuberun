@@ -47,15 +47,30 @@ Notes:
 
 `cube-sandbox launch [options] <profile> [args…] [-- <command…>]` — the
 positional split is the contract. Every cube-sandbox option (`--file`,
-`--yaml`, `--use-*`) MUST precede the profile; **everything after the
-profile is the harness's argv**, forwarded verbatim (order preserved,
-no interpretation — `launch omp --resume <id>` resumes). A `--file x`
-typed after the profile is the HARNESS's argument, not cube-sandbox's.
-`-- <command…>` keeps its override role: it replaces the harness
-command (the tail still appends after it). The boundary never changes:
-the emitted SBPL profile is byte-identical with and without a tail, and
-exit codes propagate unchanged. `show` / `sbpl` / `probe` / `new` /
-`list` stay strict: trailing options still error.
+`--yaml`, `--use-*`, `--wait`) MUST precede the profile; **everything
+after the profile is the harness's argv**, forwarded verbatim (order
+preserved, no interpretation — `launch omp --resume <id>` resumes). A
+`--file x` typed after the profile is the HARNESS's argument, not
+cube-sandbox's. `-- <command…>` keeps its override role: it replaces
+the harness command (the tail still appends after it). The boundary
+never changes: the emitted SBPL profile is byte-identical with and
+without a tail, and `--wait` exit codes propagate unchanged. `show` /
+`sbpl` / `probe` / `new` / `list` stay strict: trailing options still
+error.
+
+### Spawn-and-exit (`--wait` to block)
+
+`launch` is spawn-and-exit: resolve → preflight → stage → banner →
+spawn `sandbox-exec -f <sb> <command…>` → **exit 0**. The launcher's
+exit is the spawn status: `0` once the confined harness is running,
+`126` fail-closed (nothing ran unconfined). The harness's own exit code
+is neither observed nor waited on. Nothing after spawn depends on the
+launcher: confinement is kernel-enforced on the harness process itself,
+its inherited stdio fds stay open, the terminal's Ctrl-C reaches it
+directly, and the orphaned process reparents to launchd. `--wait`
+(before the profile) preserves the blocking contract verbatim:
+cube-sandbox stays resident and forwards the harness exit code
+(signal n ⇒ `128 + n`).
 
 ## Manifest schema
 
@@ -192,14 +207,16 @@ cube-sandbox sbpl myagent               # exact kernel profile text — also THE
 cube-sandbox sbpl myagent --file p.yaml # validate a file without installing it
 cube-sandbox show myagent               # resolved grants: rw / ro / denied banner
 cube-sandbox probe myagent              # self-checks FROM INSIDE the profile; exit 0/1
-cube-sandbox launch myagent                # launch (profile's own command)
+cube-sandbox launch myagent                # launch (profile's own command) — spawn-and-exit
+cube-sandbox launch --wait myagent         # block instead; forward the harness exit code
 cube-sandbox launch myagent -- git status  # or any command under the same boundary
 ```
 
-Exit codes: `0` ok · `1` probe failure · `2` config error
-(`ConfigException` diagnostics) · `64` usage · `126` fail-closed
+Exit codes: `0` ok — for `launch`, spawn success (the confined harness
+is running and outlives the launcher) · `1` probe failure · `2` config
+error (`ConfigException` diagnostics) · `64` usage · `126` fail-closed
 (backend missing/rejecting — the command never runs unconfined) ·
-otherwise the child's own code (signal n ⇒ `128 + n`).
+under `launch --wait`, the harness's own code (signal n ⇒ `128 + n`).
 
 ## Examples
 

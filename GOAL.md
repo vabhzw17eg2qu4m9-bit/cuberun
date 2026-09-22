@@ -81,7 +81,8 @@ cube-sandbox launch pi
   │                                            md5-10 content key)
   ├─ ProfileStage ──────► .cube-sandbox/cache/harness-<key10>.sb (atomic rename)
   ├─ Preflight ─────────► sandbox-exec probe (fail-closed ⇒ exit 126)
-  └─ Launcher ──────────► sandbox-exec -f <sb> <command…> (exit passthrough)
+  └─ Launcher ──────────► sandbox-exec -f <sb> <command…> (spawn-and-exit;
+                                                 --wait = exit passthrough)
 ```
 
 Invariants:
@@ -101,8 +102,10 @@ Invariants:
   per-task denies are the inner cubes' job.
 - **No secrets in profiles:** manifests and staged `.sb` contain paths
   only; the child's env is inherited, never logged.
-- **Signal faithfulness:** child killed by signal n ⇒ launcher exits
-  `128 + n` (POSIX; the PoC's hard-coded 143 is generalized).
+- **Signal faithfulness:** under `--wait`, a child killed by signal n
+  ⇒ launcher exits `128 + n` (POSIX; the PoC's hard-coded 143 is
+  generalized). In the default spawn-and-exit mode the terminal owns
+  signals — the harness stays in the foreground process group.
 - **Grants, never gates (v2):** `--use-<service>` layers folder grants
   into the SAME deterministic pipeline (union + dedup, flag set included
   in `key10`); cube-sandbox never inspects, allows or forbids commands — the
@@ -115,7 +118,7 @@ macOS `sandbox-exec` (SBPL) + Dart `dart compile exe`.
 
 | platform ability | our shape | notes |
 | --- | --- | --- |
-| confine a whole process tree | `cube-sandbox launch [options] <profile> [args…] [-- cmd…]` — options precede the profile, everything after it reaches the harness verbatim (I1: byte-identical boundary); `--yaml <text\|->` passes the manifest inline (stdin via `-`; with `--file` ⇒ error) | default command from the profile |
+| confine a whole process tree | `cube-sandbox launch [options] <profile> [args…] [-- cmd…]` — options precede the profile, everything after it reaches the harness verbatim (I1: byte-identical boundary); `--yaml <text\|->` passes the manifest inline (stdin via `-`; with `--file` ⇒ error) | default command from the profile; spawn-and-exit — exit 0 = spawn status (126 fail-closed), `--wait` blocks + forwards the harness exit (signal n ⇒ 128+n) |
 | enumerate profiles | `cube-sandbox list` | presets + project + user, with source labels |
 | inspect resolved grants | `cube-sandbox show <profile>` | rw/ro/denied banner |
 | inspect the exact kernel profile | `cube-sandbox sbpl <profile>` | deterministic text, no secrets |
@@ -286,7 +289,8 @@ prose. Every task has an expected outcome BEFORE it runs:
   denied outside grants, EXTRA_READ read-only, EXTRA_WRITE rw, network
   open) AND a sabotaged profile makes the probe FAIL (negative control)
   (E2E, `integration` tag).
-- **AC7** — exit faithfulness: signal n ⇒ `128+n`, codes pass through
+- **AC7** — exit faithfulness under `--wait` (the default launch is
+  spawn-and-exit, #53): signal n ⇒ `128+n`, codes pass through
   (UT on the mapping + E2E smoke).
 - **AC8** — scaffold round-trip: `cube-sandbox new` output parses through
   the strict parser and lands in `.cube-sandbox/<name>.yaml` (IT).

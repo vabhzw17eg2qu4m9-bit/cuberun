@@ -17,7 +17,8 @@ cannot do this (they load after the agent starts); the launcher is the
 only seam that confines everything.
 
 ```
-cube-sandbox launch pi                     # launch pi confined
+cube-sandbox launch pi                     # launch pi confined — spawn-and-exit
+cube-sandbox launch --wait pi              # ... or block and forward the exit code
 cube-sandbox launch --use-github pi        # + gh config/git identity (read-only)
 cube-sandbox launch omp --resume <id>      # args after the profile go to the harness
 cube-sandbox launch fa -- git status       # confine an arbitrary command
@@ -43,7 +44,13 @@ cube-sandbox probe pi                   # self-checks FROM INSIDE the profile
   Per-task denies are the inner cubes' job (two-layer model).
 - **Fail-closed** — missing/rejecting backend means the command does NOT
   run unconfined: exit 126 + diagnostic.
-- **Signal faithfulness** — child killed by signal n ⇒ exit `128 + n`.
+- **Spawn-and-exit** — `launch` exits 0 once the confined harness is
+  running (the exit code is the spawn status, not the harness's). The
+  kernel enforces the boundary on the harness process itself: its fds,
+  the terminal's Ctrl-C and launchd reparenting all work without a
+  resident parent. `--wait` opts back into blocking + exit forwarding.
+- **Signal faithfulness** — under `--wait`, a child killed by signal n
+  makes the launcher exit `128 + n`.
 - **Grants, never gates** — cube-sandbox never inspects, allows or forbids
   commands; the kernel folder boundary is the only gate.
 
@@ -100,8 +107,10 @@ stays out of every profile by construction), so a confined
 
 ## Exit codes
 
-`0` ok · `1` probe failure · `2` config error · `64` usage · `126`
-fail-closed (backend missing/rejecting) · otherwise the child's code
+`0` ok — for `launch`, spawn success: the confined harness is running
+and outlives cube-sandbox (spawn-and-exit) · `1` probe failure · `2`
+config error · `64` usage · `126` fail-closed (backend
+missing/rejecting) · under `launch --wait`, the harness's own code
 (signal n ⇒ 128+n).
 
 ## Docs & agent skill
