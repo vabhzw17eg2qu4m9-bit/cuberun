@@ -56,7 +56,9 @@ cube-sandbox clean                      # wipe <cwd>/.cube-sandbox/cache (run be
   group orphaned in the background — where raw-mode `tcsetattr` dies
   with EIO and TUIs crash at startup. `--wait` forces the blocking
   shape everywhere; `--spawn-exit` forces the legacy spawn-and-exit
-  from a terminal.
+  from a terminal. **Automation note (vs v0.3.1):** callers attached
+  to a pty (docker -t, tmux panes, CI with a tty) now get the blocking
+  shape by default — pass `--spawn-exit` to keep spawn-and-exit.
 - **Terminal inheritance on every launch path** — the spawn is
   byte-identical whether the profile was freshly staged, cache-hit, or
   rebuilt after an edit: caller's stdio, no detach, no new session, no
@@ -69,7 +71,10 @@ cube-sandbox clean                      # wipe <cwd>/.cube-sandbox/cache (run be
   child killed by signal n makes the launcher exit `128 + n`; a Ctrl-C
   on a real terminal reaches the harness, and the launcher ignores its
   own copy of the SIGINT so the harness's death — not cube-sandbox's —
-  is what surfaces.
+  is what surfaces. The hold also covers headless `--wait`: an explicit
+  SIGINT to the launcher pid itself is ignored until the harness exits
+  (deliberate E6 tradeoff); the harness still receives its own signals
+  untouched.
 - **Grants, never gates** — cube-sandbox never inspects, allows or forbids
   commands; the kernel folder boundary is the only gate.
 
@@ -192,9 +197,12 @@ the TUI (or `stty raw -echo`) works each time:
 cube-sandbox clean                                                  # state 1: cold cache
 CUBE_SANDBOX_SPAWN_LOG=/tmp/spawn.jsonl cube-sandbox launch <profile> \
   -e extensions/pi-pi.ts --session 01a0be35-369a-76ea-9cde-c4b2d48cc79c
-cube-sandbox launch <profile> --session <different-uuid>            # state 2: cache-hit
+CUBE_SANDBOX_SPAWN_LOG=/tmp/spawn.jsonl cube-sandbox launch <profile> \
+  -e extensions/pi-pi.ts --session 01a0be35-369a-76ea-9cde-c4b2d48cc79c
+                                                                    # state 2: cache-hit, IDENTICAL args
+cube-sandbox launch <profile> --session <different-uuid>            # C2: same profile key, no warning
 # edit the manifest (e.g. widen extraWrite), then relaunch          # state 3: rebuild
-cat /tmp/spawn.jsonl                                                # identical spawn records
+cat /tmp/spawn.jsonl                                                # states 1+2: byte-identical records
 ```
 
 Expected: the harness reaches its TUI with no `setRawMode EIO`; state 2

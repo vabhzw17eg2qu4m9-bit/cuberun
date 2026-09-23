@@ -81,7 +81,9 @@ spawn-and-exit from a terminal; the two are mutually exclusive
 (exit 2). In every mode, on every launch path (fresh build, cache hit,
 rebuild), the spawn is identical: inherited stdio, no detach, no new
 session — and the harness's SIGINT death is what surfaces, because the
-launcher ignores its own copy while waiting. The profile itself never
+launcher ignores its own copy while waiting (headless `--wait` holds
+too: an explicit SIGINT to the launcher pid is ignored until the
+harness exits). The profile itself never
 names tty devices or denies ioctls (byte-level audit tests pin this);
 raw mode needs zero grants. `CUBE_SANDBOX_SPAWN_LOG` (below) records
 each spawn so equivalence is observable, not assumed.

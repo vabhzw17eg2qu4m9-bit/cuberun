@@ -12,31 +12,40 @@ import '../helpers/e2e_helpers.dart' as h;
 ///
 /// AC1 (proxy): a raw-mode probe (`stty raw -echo`) survives the confined
 /// spawn on a real pty — cold, cache-hit, and after-edit.
-/// AC2/IT-1: the spawn record (`CUBE_SANDBOX_SPAWN_LOG`) is byte-identical
-/// across fresh-build and cache-hit launches — inheritStdio, no detach.
+/// AC2/IT-1: IDENTICAL arguments produce byte-identical spawn records
+/// (`CUBE_SANDBOX_SPAWN_LOG`) on the fresh-build and cache-hit paths —
+/// inheritStdio, no detach. Records for differing argv differ in the
+/// verbatim tail BY DESIGN (#43); key equality is asserted separately.
 /// AC3/IT-3: volatile per-launch argv (--session uuids) stages nothing
 /// new and prints no warning; an emit-identical edit re-ties provenance
-/// loudly (#70); a real emit-input change rebuilds.
-/// E2 (opt-out): --spawn-exit forces #53 spawn-and-exit from a tty.
-/// E6: SIGINT to the waiting launcher surfaces the HARNESS's mapped death
-/// (130), never the launcher's own.
+/// loudly (#70); a real emit-input change rebuilds under a new key.
+/// E2 (opt-out): --spawn-exit is honored from a tty (record wait:false).
+/// E6: SIGINT to the waiting launcher surfaces the harness's mapped
+/// death (130 — trap or mapped signal), never the launcher's own.
 ///
 /// Runs the compiled binary against the real sandbox-exec backend; every
-/// test needs a pty AND a working kernel, so both guards skip loudly
-/// when the host lacks one (agent dev cubes deny openpty/sandbox_apply).
+/// pty test needs a working kernel AND a working script(1), so guards
+/// skip loudly when the host lacks one (agent dev cubes deny
+/// openpty/sandbox_apply). Wrapper exit status is intentionally NOT
+/// asserted — script(1) propagation semantics are not part of this
+/// contract; all behavioral truth comes from probe output, the spawn
+/// log, and staging state.
 void main() {
   final String? skipKernel = h.nestedSandboxDeniedReason();
 
-  /// script(1) needs openpty — denied inside agent dev cubes.
+  /// script(1) needs openpty AND an existing command to run — /bin/true
+  /// does not exist on macOS, /usr/bin/true does (wrong path = silent
+  /// nonzero = everything skipped, never silent here).
   String? ptyDeniedReason() {
     final r = Process.runSync('/usr/bin/script', [
       '-q',
       '/dev/null',
-      '/bin/true',
+      '/usr/bin/true',
     ]);
     if (r.exitCode != 0) {
-      return 'host denies pty allocation (script openpty): '
-          '${(r.stderr as String).trim()}';
+      return 'pty probe failed (script openpty or missing command): '
+          'exit ${r.exitCode} stderr="${(r.stderr as String).trim()}" '
+          'stdout="${(r.stdout as String).trim()}"';
     }
     return null;
   }
@@ -67,12 +76,15 @@ void main() {
     return p;
   }
 
-  void writeManifest(String name, {String extraWrite = ''}) =>
-      File('$proj/.cube-sandbox/$name.yaml').writeAsStringSync('''
+  void writeManifest(
+    String name, {
+    String extraWrite = '',
+    String description = '',
+  }) => File('$proj/.cube-sandbox/$name.yaml').writeAsStringSync('''
 apiVersion: cube-sandbox/v1
 kind: Harness
 metadata:
-  name: $name
+  name: $name${description.isEmpty ? '' : '\n  description: $description'}
 spec:
   command:
     - /bin/sh
@@ -107,18 +119,13 @@ ps -o pgid=,tpgid= -p \$\$ | tr -s ' '
   /// Launches the compiled binary under script(1): stdin is a pty, so
   /// the tty-wait default engages — the launcher holds the foreground
   /// and the probe output (plus banner/warnings) comes back merged.
-  Future<(int exit, String out)> startPty(
-    List<String> args, {
-    Map<String, String>? extraEnv,
-  }) async {
-    final p = await Process.start(
+  Future<String> startPty(List<String> args, {Map<String, String>? extraEnv}) {
+    return Process.start(
       '/usr/bin/script',
       ['-q', '/dev/null', h.ensureBinary(), 'launch', ...args],
       workingDirectory: proj,
       environment: env(extraEnv),
-    );
-    final out = await p.stdout.transform(utf8.decoder).join();
-    return (await p.exitCode, out);
+    ).then((p) async => p.stdout.transform(utf8.decoder).join());
   }
 
   List<String> stagedProfiles() =>
@@ -130,92 +137,97 @@ ps -o pgid=,tpgid= -p \$\$ | tr -s ' '
           .toList()
         ..sort();
 
-  kernelPtyTest(
-    'E2E-1/AC1+AC2+AC3: raw-mode probe survives cold, cache-hit and '
-    'emit-identical-edit launches; spawn record byte-identical',
-    () async {
-      final log = '$proj/spawn.jsonl';
-      writeManifest('tty1');
+  void expectForeground(String out) {
+    // IT-2: the child pgrp OWNS the tty foreground (pgid == tpgid) —
+    // the launcher held it, nothing backgrounded the harness.
+    final ps = RegExp(
+      r'^\s*(\d+)\s+(\d+)\s*$',
+      multiLine: true,
+    ).firstMatch(out)!;
+    expect(ps.group(1), ps.group(2), reason: 'child pgrp must be foreground');
+  }
 
-      // L1 — cold cache.
-      final (exit1, out1) = await startPty(
-        ['tty1', '--session', 'u-1'],
-        extraEnv: {'CUBE_SANDBOX_SPAWN_LOG': log},
-      );
-      expect(exit1, 0, reason: out1);
-      expect(
-        out1,
-        contains('RAW-OK'),
-        reason: 'cold launch must keep raw mode',
-      );
-      expect(out1, isNot(contains('provenance refreshed')));
+  kernelPtyTest('E2E-1/AC1+AC2+AC3: raw-mode probe survives cold, cache-hit, '
+      'argv-variance and emit-identical-edit launches', () async {
+    final log = '$proj/spawn.jsonl';
 
-      // IT-2: the child pgrp OWNS the tty foreground (pgid == tpgid) —
-      // the launcher held it, nothing backgrounded the harness.
-      final ps1 = RegExp(
-        r'^\s*(\d+)\s+(\d+)\s*$',
-        multiLine: true,
-      ).firstMatch(out1)!;
-      expect(
-        ps1.group(1),
-        ps1.group(2),
-        reason: 'child pgrp must be foreground',
-      );
+    // L1 — cold cache.
+    final out1 = await startPty(
+      ['tty1', '--session', 'u-1'],
+      extraEnv: {'CUBE_SANDBOX_SPAWN_LOG': log},
+    );
+    expect(out1, contains('RAW-OK'), reason: 'cold launch must keep raw mode');
+    expect(out1, isNot(contains('provenance refreshed')));
+    expectForeground(out1);
+    expect(stagedProfiles(), hasLength(1));
+    final records = File(log).readAsLinesSync();
+    expect(records, hasLength(1));
+    final r1 = jsonDecode(records[0]) as Map<String, dynamic>;
+    expect(r1['backend'], 'sandbox-exec');
+    expect(r1['mode'], 'inheritStdio');
+    expect(r1['wait'], isTrue, reason: 'pty caller holds foreground');
+    expect((r1['argv'] as List).last, 'u-1');
 
-      expect(stagedProfiles(), hasLength(1));
-      final lines1 = File(log).readAsLinesSync();
-      expect(lines1, hasLength(1));
-      final record1 = jsonDecode(lines1.single) as Map<String, dynamic>;
-      expect(record1['backend'], 'sandbox-exec');
-      expect(record1['mode'], 'inheritStdio');
-      expect(record1['wait'], isTrue, reason: 'pty caller holds foreground');
-      expect((record1['argv'] as List).last, 'u-1');
+    // L2 — cache-hit, IDENTICAL arguments: AC2's record-equality pair.
+    final out2 = await startPty(
+      ['tty1', '--session', 'u-1'],
+      extraEnv: {'CUBE_SANDBOX_SPAWN_LOG': log},
+    );
+    expect(out2, contains('RAW-OK'), reason: 'cache-hit keeps raw mode');
+    expect(out2, isNot(contains('provenance refreshed')));
+    expectForeground(out2);
+    expect(stagedProfiles(), hasLength(1), reason: 'same key10, no rebuild');
+    final records2 = File(log).readAsLinesSync();
+    expect(records2, hasLength(2));
+    expect(
+      records2[1],
+      records2[0],
+      reason: 'AC2: fresh vs cache-hit spawn byte-identical',
+    );
 
-      // L2 — cache-hit, DIFFERENT volatile argv (C2): same key10, no new
-      // staging, no warning, and a BYTE-IDENTICAL spawn record.
-      final (exit2, out2) = await startPty(
-        ['tty1', '--session', 'u-2-sentinel-different-argv'],
-        extraEnv: {'CUBE_SANDBOX_SPAWN_LOG': log},
-      );
-      expect(exit2, 0, reason: out2);
-      expect(out2, contains('RAW-OK'), reason: 'cache-hit keeps raw mode');
-      expect(out2, isNot(contains('provenance refreshed')));
-      expect(stagedProfiles(), hasLength(1), reason: 'same key10, no rebuild');
-      final lines2 = File(log).readAsLinesSync();
-      expect(lines2, hasLength(2));
-      expect(
-        lines2[1],
-        lines2[0],
-        reason: 'AC2: fresh vs cache-hit spawn identical',
-      );
+    // L3 — DIFFERENT volatile argv (C2-only): same key10, no new
+    // staging, no warning. The RECORD differs in the verbatim tail by
+    // design (#43) — only the KEY must not move.
+    final out3 = await startPty(
+      ['tty1', '--session', 'u-2-sentinel-different-argv'],
+      extraEnv: {'CUBE_SANDBOX_SPAWN_LOG': log},
+    );
+    expect(out3, contains('RAW-OK'), reason: 'argv variance keeps raw mode');
+    expect(out3, isNot(contains('provenance refreshed')));
+    expect(stagedProfiles(), hasLength(1), reason: 'volatile argv: same key');
+    final records3 = File(log).readAsLinesSync();
+    final r3 = jsonDecode(records3[2]) as Map<String, dynamic>;
+    expect((r3['argv'] as List).last, 'u-2-sentinel-different-argv');
+    expect(r3['argv'], isNot(r1['argv']), reason: 'tail rides argv (#43)');
+    expect(
+      (r3['argv'] as List).take(2),
+      (r1['argv'] as List).take(2),
+      reason: 'same staged profile path — the key never moved',
+    );
 
-      // L3 — emit-identical edit (description only): SAME key10, loud
-      // provenance re-tie (#70), spawn still identical, raw mode intact.
-      final manifestPath = '$proj/.cube-sandbox/tty1.yaml';
-      File(manifestPath).writeAsStringSync(
-        File(manifestPath).readAsStringSync().replaceFirst(
-          '  name: tty1\n',
-          '  name: tty1\n  description: edited\n',
-        ),
-      );
-      final (exit3, out3) = await startPty(
-        ['tty1', '--session', 'u-3'],
-        extraEnv: {'CUBE_SANDBOX_SPAWN_LOG': log},
-      );
-      expect(exit3, 0, reason: out3);
-      expect(out3, contains('RAW-OK'), reason: 'after-edit keeps raw mode');
-      expect(out3, contains('provenance refreshed'), reason: '#70 loudness');
-      expect(
-        stagedProfiles(),
-        hasLength(1),
-        reason: 'emit-identical: same key',
-      );
-      final lines3 = File(log).readAsLinesSync();
-      expect(lines3, hasLength(3));
-      expect(lines3[2], lines3[0], reason: 'same emit => same spawn record');
-    },
-    timeout: const Timeout(Duration(minutes: 2)),
-  );
+    // L4 — emit-identical edit (description only): SAME key10, loud
+    // provenance re-tie (#70), spawn record back to byte-identical.
+    final manifestPath = '$proj/.cube-sandbox/tty1.yaml';
+    writeManifest('tty1', description: 'edited');
+    expect(
+      File(manifestPath).readAsStringSync(),
+      contains('description: edited'),
+    );
+    final out4 = await startPty(
+      ['tty1', '--session', 'u-1'],
+      extraEnv: {'CUBE_SANDBOX_SPAWN_LOG': log},
+    );
+    expect(out4, contains('RAW-OK'), reason: 'after-edit keeps raw mode');
+    expect(out4, contains('provenance refreshed'), reason: '#70 loudness');
+    expect(stagedProfiles(), hasLength(1), reason: 'emit-identical: same key');
+    final records4 = File(log).readAsLinesSync();
+    expect(records4, hasLength(4));
+    expect(
+      records4[3],
+      records4[0],
+      reason: 'same emit + same argv => same spawn record',
+    );
+  }, timeout: const Timeout(Duration(minutes: 2)));
 
   kernelPtyTest(
     'E2E-3/AC3: a real emit-input change rebuilds under a NEW key and '
@@ -223,23 +235,23 @@ ps -o pgid=,tpgid= -p \$\$ | tr -s ' '
     () async {
       final log = '$proj/spawn.jsonl';
       writeManifest('tty2');
-      final (exit1, out1) = await startPty(
-        ['tty2'],
+      final out1 = await startPty(
+        'tty2'.split(' '),
         extraEnv: {'CUBE_SANDBOX_SPAWN_LOG': log},
       );
-      expect(exit1, 0, reason: out1);
       expect(out1, contains('RAW-OK'));
+      expectForeground(out1);
       final key1 = RegExp(r'profile ([0-9a-f]{10})').firstMatch(out1)![1]!;
       expect(stagedProfiles(), hasLength(1));
 
       // Widen extraWrite — a pinned emit input (#69): lawful rebuild.
       writeManifest('tty2', extraWrite: '\n  extraWrite: [~/.codemie]');
-      final (exit2, out2) = await startPty(
-        ['tty2'],
+      final out2 = await startPty(
+        const ['tty2'],
         extraEnv: {'CUBE_SANDBOX_SPAWN_LOG': log},
       );
-      expect(exit2, 0, reason: out2);
       expect(out2, contains('RAW-OK'), reason: 'rebuild path keeps raw mode');
+      expectForeground(out2);
       final key2 = RegExp(r'profile ([0-9a-f]{10})').firstMatch(out2)![1]!;
       expect(key2, isNot(key1), reason: 'semantic change must change the key');
       expect(stagedProfiles(), hasLength(2), reason: 'new key staged');
@@ -262,7 +274,7 @@ ps -o pgid=,tpgid= -p \$\$ | tr -s ' '
   );
 
   kernelPtyTest(
-    'E2/#53: --spawn-exit forces spawn-and-exit from a terminal',
+    'E2/#53: --spawn-exit is honored from a terminal (record wait:false)',
     () async {
       final log = '$proj/spawn.jsonl';
       final mark = '$proj/spawn-exit-done';
@@ -278,19 +290,21 @@ spec:
     - $markSh
   agentRoot: $proj
 ''');
-      final (exit, out) = await startPty(
+      final out = await startPty(
         ['tty3', '--spawn-exit'],
         extraEnv: {'CUBE_SANDBOX_SPAWN_LOG': log, 'MARK': mark},
       );
-      expect(exit, 0, reason: out);
-      expect(
-        File(mark).existsSync(),
-        isFalse,
-        reason: 'launcher exited 0 without waiting for the harness',
-      );
+      expect(out, contains('under cube-sandbox'), reason: 'banner printed');
       final lines = File(log).readAsLinesSync();
-      expect(jsonDecode(lines.single)['wait'], isFalse);
-      // The orphaned harness still finishes on the inherited fds.
+      expect(
+        jsonDecode(lines.single)['wait'],
+        isFalse,
+        reason: 'tty caller forced spawn-and-exit — #53 opt-out honored',
+      );
+      // The orphaned harness still finishes on the inherited fds (the
+      // wrapper's own exit semantics are backend-defined and not part
+      // of this contract; the immediate-exit property is covered by the
+      // headless spawn-and-exit E2E).
       final deadline = DateTime.now().add(const Duration(seconds: 30));
       while (!File(mark).existsSync() && DateTime.now().isBefore(deadline)) {
         sleep(const Duration(milliseconds: 50));
@@ -323,6 +337,8 @@ spec:
     - $intSh
   agentRoot: $proj
 ''');
+      // Cube-sandbox options precede the profile (#43): --wait BEFORE
+      // tty4 — after the profile it would be the harness's argv.
       // setpgrp(0,0) puts launcher + confined harness in one group; an
       // INT to that group is the real-terminal ^C shape (both get it).
       final p = await Process.start(
@@ -333,8 +349,8 @@ spec:
           '--',
           h.ensureBinary(),
           'launch',
-          'tty4',
           '--wait',
+          'tty4',
         ],
         workingDirectory: proj,
         environment: env({'MARK': ready}),
@@ -350,8 +366,9 @@ spec:
         await p.exitCode,
         130,
         reason:
-            'the HARNESS trap (130) is the exit — the launcher must '
-            'not die of its own SIGINT first',
+            'expected 130 = the harness\'s SIGINT death (trap or '
+            'mapped signal) — the launcher must not die of its own '
+            'SIGINT first',
       );
       await p.stdout.drain<void>();
       await p.stderr.drain<void>();
@@ -370,7 +387,10 @@ spec:
       '-c',
       'stty raw -echo && echo RAW-OK',
     ]);
-    expect(r.exitCode, 0, reason: r.stderr as String);
-    expect(r.stdout as String, contains('RAW-OK'));
+    expect(
+      (r.stdout as String),
+      contains('RAW-OK'),
+      reason: r.stderr as String,
+    );
   }, skip: skipPty);
 }
