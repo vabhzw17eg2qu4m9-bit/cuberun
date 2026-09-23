@@ -331,17 +331,18 @@ sleep "\$HOLD"
   );
 
   kernelPtyTest(
-    'E2/#53: --spawn-exit is honored from a terminal (record wait:false)',
+    'E2/#53: --spawn-exit is honored from a terminal (record wait:false, '
+    'fast return; survival is headless-only — the tty hazard is the doc)',
     () async {
       final log = '$proj/spawn.jsonl';
-      final mark = '$proj/spawn-exit-done';
-      // Ignores HUP on purpose: script(1) exits when the launcher does,
-      // the pty master closes and the orphan gets SIGHUP — it must
-      // survive to finish its write (signals after cube's exit, E2E-5).
-      final markSh = writeScript(
-        'marker',
-        "trap '' HUP\nsleep 3\nprintf done > \"\$MARK\"\n",
-      );
+      // From a tty, --spawn-exit hands the terminal back immediately and
+      // Unix tears the orphan's session down on master close (HUP) —
+      // that is the DOCUMENTED v0.3.1 hazard (#81), not a launcher bug.
+      // So this asserts the CONTRACT, not child survival (survival is
+      // pinned headless by launch_spawn_exit_e2e E2E-1/E2E-7, green on
+      // CI): fast return, banner, wait:false record, harness started.
+      final started = '$proj/spawn-exit-started';
+      final markSh = writeScript('marker', 'printf started > "\$STARTED"\n');
       File('$proj/.cube-sandbox/tty3.yaml').writeAsStringSync('''
 apiVersion: cube-sandbox/v1
 kind: Harness
@@ -353,11 +354,20 @@ spec:
     - $markSh
   agentRoot: $proj
 ''');
+      final t0 = DateTime.now();
       final p = await spawnPty(
         ['--spawn-exit', 'tty3'],
-        extraEnv: {'CUBE_SANDBOX_SPAWN_LOG': log, 'MARK': mark},
+        extraEnv: {'CUBE_SANDBOX_SPAWN_LOG': log, 'STARTED': started},
       );
       final out = await p.stdout.transform(utf8.decoder).join();
+      final elapsed = DateTime.now().difference(t0);
+      expect(
+        elapsed,
+        lessThan(const Duration(seconds: 10)),
+        reason:
+            'launcher must return immediately from a tty '
+            '(spawn-and-exit), not wait for the harness',
+      );
       expect(out, contains('under cube-sandbox'), reason: 'banner printed');
       final lines = File(log).readAsLinesSync();
       expect(
@@ -365,20 +375,15 @@ spec:
         isFalse,
         reason: 'tty caller forced spawn-and-exit — #53 opt-out honored',
       );
-      // The orphaned harness still finishes its write (the wrapper's
-      // own exit semantics are backend-defined and not part of this
-      // contract; the immediate-exit property is covered by the
-      // headless spawn-and-exit E2E).
-      final deadline = DateTime.now().add(const Duration(seconds: 30));
-      while (!File(mark).existsSync() && DateTime.now().isBefore(deadline)) {
+      final deadline = DateTime.now().add(const Duration(seconds: 10));
+      while (!File(started).existsSync() && DateTime.now().isBefore(deadline)) {
         sleep(const Duration(milliseconds: 50));
       }
       expect(
-        File(mark).existsSync(),
+        File(started).existsSync(),
         isTrue,
-        reason: 'orphaned harness must survive the launcher and finish',
+        reason: 'harness started inside the boundary before the return',
       );
-      expect(File(mark).readAsStringSync(), 'done');
     },
     timeout: const Timeout(Duration(minutes: 2)),
   );

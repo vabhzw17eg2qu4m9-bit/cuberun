@@ -58,4 +58,28 @@ void main() {
     expect(config, contains('foreground-hold'));
     expect(config, contains('CUBE_SANDBOX_SPAWN_LOG'));
   });
+
+  test('docs pin the from-tty --spawn-exit hazard (headless-shape only)', () {
+    // From a terminal, --spawn-exit hands the tty back immediately and
+    // Unix tears the orphan's session down on pty master close — the
+    // documented v0.3.1 raw-mode hazard (#81). The docs must say it is
+    // for headless-shape automation, not TUIs.
+    final readme = read('README.md');
+    expect(
+      readme,
+      contains('headless-shape automation'),
+      reason: 'README automation note must pin the from-tty hazard',
+    );
+    expect(
+      readme,
+      contains('not TUIs'),
+      reason: 'README automation note must exclude TUIs from --spawn-exit',
+    );
+    final config = read('docs/config.md');
+    expect(
+      config,
+      contains('the v0.3.1 raw-mode hazard #81'),
+      reason: 'config.md terminal section must pin the from-tty hazard',
+    );
+  });
 }
