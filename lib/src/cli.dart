@@ -31,17 +31,23 @@ cube-sandbox $kCubeSandboxVersion — kernel-confined launcher for AI harnesses
 Usage:
   cube-sandbox launch [options] <profile> [args…] [-- <command…>]
       Launch a command (default: the profile's own) inside the Layer-0
-      kernel profile. Spawn-and-exit: once the confined harness is
-      running, cube-sandbox exits 0 (the exit code is the spawn status,
-      not the harness's) — the harness keeps the terminal, its fds and
-      the kernel boundary on its own. --wait blocks for the harness
-      instead and forwards its exit code (signal n => 128+n). Options
-      (--file/--yaml/--use-*) precede the profile; everything AFTER it
-      is the harness's argv, forwarded verbatim (order preserved).
-      Service grants: --use-github, --use-gitlab, --use-nvm. --yaml
-      passes the manifest inline ('-' reads stdin); --yaml + --file
-      together is an error. `-- <command…>` overrides the harness
-      command.
+      kernel profile. Terminal control (issue #81): with a tty on stdin
+      the launcher HOLDS the foreground for the harness's lifetime and
+      forwards its exit code (signal n => 128+n) — the TUI keeps raw
+      mode; headless callers keep spawn-and-exit: once the confined
+      harness is running, cube-sandbox exits 0 (the exit code is the
+      spawn status, not the harness's). --wait forces the blocking
+      shape everywhere; --spawn-exit forces spawn-and-exit from a
+      terminal (the two are mutually exclusive). The harness always
+      gets the caller's stdio, the foreground pgrp and no detach —
+      identical spawn flags on every launch path (fresh build, cache
+      hit, rebuild). Options (--file/--yaml/--use-*) precede the
+      profile; everything AFTER it is the harness's argv, forwarded
+      verbatim (order preserved) and never affects the staged profile
+      key. Service grants: --use-github, --use-gitlab, --use-nvm.
+      --yaml passes the manifest inline ('-' reads stdin); --yaml +
+      --file together is an error. `-- <command…>` overrides the
+      harness command.
   cube-sandbox list
       Enumerate profiles: presets + project .cube-sandbox/ + user ~/.cube-sandbox/.
   cube-sandbox show <profile> [--file <f> | --yaml <text|->] [--use-<service>]...
@@ -62,8 +68,13 @@ Env knobs:
   CUBE_SANDBOX_EXTRA_READ   colon-separated read-only grants (~ ok)
   CUBE_SANDBOX_EXTRA_WRITE  colon-separated read-write grants (~ ok;
                        ~/.ssh / ~/.gnupg / ~/Library/Keychains NEVER)
+  CUBE_SANDBOX_SPAWN_LOG    path: launch appends one JSON line per
+                       spawn (backend/argv/mode/wait) — diagnostics for
+                       terminal-control issues; a bad path never fails
+                       a launch
 
-Exit codes: 0 ok (launch: spawn success — the harness outlives us) ·
+Exit codes: 0 ok (headless launch: spawn success — the harness
+outlives us; tty launch / --wait: the harness's own code) ·
 1 probe failed · 2 config error · 64 usage ·
 126 fail-closed (backend missing/rejecting) ·
 --wait: the harness's own code (signal n => 128+n).''';
@@ -250,10 +261,21 @@ void _printWarnings(HarnessRuntime rt, void Function(String) err) {
 
 Future<int> _cmdLaunch(List<String> args, void Function(String) err) async {
   final split = splitLaunchArgv(args);
-  // `--wait` is launch-only; strict verbs stay strict. splitLaunchArgv
-  // keeps everything after the profile OUT of here — a `--wait` there is
-  // the harness's argv, forwarded verbatim.
-  final opts = _scanOpts(split.args, const {}, boolFlags: const {'wait'});
+  // `--wait` and `--spawn-exit` are launch-only; strict verbs stay
+  // strict. splitLaunchArgv keeps everything after the profile OUT of
+  // here — a `--wait` there is the harness's argv, forwarded verbatim.
+  final opts = _scanOpts(
+    split.args,
+    const {},
+    boolFlags: const {'wait', 'spawn-exit'},
+  );
+  final waitFlag = opts.flags.containsKey('wait');
+  final spawnExitFlag = opts.flags.containsKey('spawn-exit');
+  if (waitFlag && spawnExitFlag) {
+    throw const ConfigException(
+      '--wait and --spawn-exit are mutually exclusive',
+    );
+  }
   final r = await _resolveForRun(opts, 'launch');
   final resolved = r.resolved;
   final runtime = r.runtime;
@@ -302,8 +324,15 @@ Future<int> _cmdLaunch(List<String> args, void Function(String) err) async {
   return launchConfined(
     profilePath: profilePath,
     command: [...command, ...split.tail],
-    wait: opts.flags.containsKey('wait'),
+    // Issue #81: a tty caller holds the foreground (wait) so the TUI
+    // keeps raw mode; headless callers keep #53 spawn-and-exit.
+    wait: shouldWait(
+      waitFlag: waitFlag,
+      spawnExitFlag: spawnExitFlag,
+      stdinHasTerminal: io.stdin.hasTerminal,
+    ),
     onFailClosed: err,
+    spawnLogPath: io.Platform.environment['CUBE_SANDBOX_SPAWN_LOG'],
   );
 }
 
