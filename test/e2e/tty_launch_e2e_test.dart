@@ -100,14 +100,15 @@ spec:
     proj = '${tmp.path}/proj';
     Directory('$proj/.cube-sandbox').createSync(recursive: true);
     // Raw-mode probe: the exact syscall class the reporter's pi dies on
-    // (tcsetattr), plus a pgrp/foreground fingerprint for IT-2.
+    // (tcsetattr), plus a labeled pgrp/foreground fingerprint for IT-2
+    // (separate -o calls; immune to column spacing and CR translation).
     probeSh = writeScript('probe', '''
 if stty raw -echo 2>/dev/null; then
   echo RAW-OK
 else
   echo RAW-FAIL
 fi
-ps -o pgid=,tpgid= -p \$\$ | tr -s ' '
+echo "PGRP-\$(ps -o pgid= -p \$\$ | tr -d ' ')-\$(ps -o tpgid= -p \$\$ | tr -d ' ')-END"
 ''');
   });
 
@@ -140,16 +141,26 @@ ps -o pgid=,tpgid= -p \$\$ | tr -s ' '
   void expectForeground(String out) {
     // IT-2: the child pgrp OWNS the tty foreground (pgid == tpgid) —
     // the launcher held it, nothing backgrounded the harness.
-    final ps = RegExp(
-      r'^\s*(\d+)\s+(\d+)\s*$',
-      multiLine: true,
-    ).firstMatch(out)!;
-    expect(ps.group(1), ps.group(2), reason: 'child pgrp must be foreground');
+    final flat = out.replaceAll('\r', '');
+    final matches = RegExp(r'PGRP-(\d+)-(\d+)-END').allMatches(flat).toList();
+    expect(
+      matches,
+      isNotEmpty,
+      reason: 'no PGRP line in probe output — full output:\n$flat',
+    );
+    final pgid = matches.last.group(1)!;
+    final tpgid = matches.last.group(2)!;
+    expect(
+      pgid,
+      tpgid,
+      reason: 'child pgrp must be foreground — full output:\n$flat',
+    );
   }
 
   kernelPtyTest('E2E-1/AC1+AC2+AC3: raw-mode probe survives cold, cache-hit, '
       'argv-variance and emit-identical-edit launches', () async {
     final log = '$proj/spawn.jsonl';
+    writeManifest('tty1');
 
     // L1 — cold cache.
     final out1 = await startPty(
@@ -291,7 +302,7 @@ spec:
   agentRoot: $proj
 ''');
       final out = await startPty(
-        ['tty3', '--spawn-exit'],
+        ['--spawn-exit', 'tty3'],
         extraEnv: {'CUBE_SANDBOX_SPAWN_LOG': log, 'MARK': mark},
       );
       expect(out, contains('under cube-sandbox'), reason: 'banner printed');
