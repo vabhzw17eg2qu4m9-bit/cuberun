@@ -47,7 +47,7 @@ Notes:
 
 `cube-sandbox launch [options] <profile> [args…] [-- <command…>]` — the
 positional split is the contract. Every cube-sandbox option (`--file`,
-`--yaml`, `--use-*`, `--wait`) MUST precede the profile; **everything
+`--yaml`, `--use-*`, `--wait`, `--spawn-exit`) MUST precede the profile; **everything
 after the profile is the harness's argv**, forwarded verbatim (order
 preserved, no interpretation — `launch omp --resume <id>` resumes). A
 `--file x` typed after the profile is the HARNESS's argument, not
@@ -58,19 +58,38 @@ without a tail, and `--wait` exit codes propagate unchanged. `show` /
 `sbpl` / `probe` / `new` / `list` stay strict: trailing options still
 error.
 
-### Spawn-and-exit (`--wait` to block)
+### Spawn-and-exit (`--wait` to block) / terminal control (issue #81)
 
-`launch` is spawn-and-exit: resolve → preflight → stage → banner →
-spawn `sandbox-exec -f <sb> <command…>` → **exit 0**. The launcher's
-exit is the spawn status: `0` once the confined harness is running,
-`126` fail-closed (nothing ran unconfined). The harness's own exit code
-is neither observed nor waited on. Nothing after spawn depends on the
-launcher: confinement is kernel-enforced on the harness process itself,
-its inherited stdio fds stay open, the terminal's Ctrl-C reaches it
-directly, and the orphaned process reparents to launchd. `--wait`
-(before the profile) preserves the blocking contract verbatim:
-cube-sandbox stays resident and forwards the harness exit code
-(signal n ⇒ `128 + n`).
+`launch` is spawn-and-exit for HEADLESS callers: resolve → preflight →
+stage → banner → spawn `sandbox-exec -f <sb> <command…>` → **exit 0**.
+The launcher's exit is the spawn status: `0` once the confined harness
+is running, `126` fail-closed (nothing ran unconfined). The harness's
+own exit code is neither observed nor waited on. Nothing after spawn
+depends on the launcher: confinement is kernel-enforced on the harness
+process itself, its inherited stdio fds stay open, the terminal's
+Ctrl-C reaches it directly, and the orphaned process reparents to
+launchd.
+
+**From a terminal (stdin is a tty) the default flips to
+foreground-hold**: cube-sandbox stays resident until the harness exits
+and forwards its code (signal n ⇒ `128 + n`). Exiting first would let
+the shell's job control reclaim the tty, orphaning the harness's pgrp
+in the background — where raw-mode `tcsetattr` returns EIO and TUIs
+die with `setRawMode EIO` at startup. `--wait` (before the profile)
+forces the blocking shape everywhere; `--spawn-exit` forces the legacy
+spawn-and-exit from a terminal — which hands the tty back to the
+shell's job control immediately, i.e. the v0.3.1 raw-mode hazard #81
+fixes; it is meant for headless-shape automation, not TUIs; the two
+are mutually exclusive
+(exit 2). In every mode, on every launch path (fresh build, cache hit,
+rebuild), the spawn is identical: inherited stdio, no detach, no new
+session — and the harness's SIGINT death is what surfaces, because the
+launcher ignores its own copy while waiting (headless `--wait` holds
+too: an explicit SIGINT to the launcher pid is ignored until the
+harness exits). The profile itself never
+names tty devices or denies ioctls (byte-level audit tests pin this);
+raw mode needs zero grants. `CUBE_SANDBOX_SPAWN_LOG` (below) records
+each spawn so equivalence is observable, not assumed.
 
 ## Manifest schema
 
@@ -170,6 +189,10 @@ rewritten (mtime-stable). Invalidation is source-driven and unskippable:
   changes the emitted text ⇒ **new key10 ⇒ the next launch stages and runs
   the fresh profile**. No launch ever runs a profile that predates its
   source.
+- **Volatile per-launch argv never touches the key** (issue #81 C2):
+  `--session` uuids, `-e` extension args, anything after the profile —
+  it all rides the harness argv verbatim. Identical config + different
+  session id ⇒ same `key10`, same staged file, no rewrite, no warning.
 - **Provenance stamps**: each staged profile has a sibling
   `harness-<key10>.src` recording which source document built it
   (`sha256(label · path · raw text)  label (path)`). If the same key is
@@ -223,6 +246,11 @@ Colon-separated path lists, `~` expanded, empty entries dropped:
 
 - `CUBE_SANDBOX_EXTRA_READ` — appended as read-only grants.
 - `CUBE_SANDBOX_EXTRA_WRITE` — appended as read-write grants.
+- `CUBE_SANDBOX_SPAWN_LOG` — path (issue #81): each `launch` appends one
+  JSON line `{"backend","argv","mode","wait"}` describing the confined
+  spawn. Launch-path equivalence is provable from the log: identical
+  arguments ⇒ byte-identical records, whatever the cache state was. A
+  broken path is diagnostic-only and never fails a launch.
 
 **Ungrantable roots (E10):** `~/.ssh`, `~/.gnupg`,
 `~/Library/Keychains` (+ their `/private` spellings) — no manifest

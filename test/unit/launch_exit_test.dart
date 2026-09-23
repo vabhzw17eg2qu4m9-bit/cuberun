@@ -71,4 +71,45 @@ void main() {
     );
     expect(code, 137);
   });
+
+  // --- issue #81: spawn observability + launcher-not-its-own-signal.
+
+  test('spawnLogPath receives one JSON record per launch', () async {
+    final log = '${tmp.path}/spawn.log';
+    final code = await launchConfined(
+      profilePath: '/p/harness-abc.sb',
+      command: const ['pi', '--session', 'u-1'],
+      backend: backend('exit 0'),
+      wait: true,
+      spawnLogPath: log,
+    );
+    expect(code, 0);
+    final lines = File(log).readAsLinesSync();
+    expect(lines, hasLength(1));
+    expect(lines.single, contains('"wait":true'));
+    expect(lines.single, contains('/p/harness-abc.sb'));
+    expect(lines.single, contains('u-1'));
+  });
+
+  test('unwaited spawn records wait:false in the log', () async {
+    final log = '${tmp.path}/spawn.log';
+    await launchConfined(
+      profilePath: '/dev/null',
+      command: const [],
+      backend: backend('exit 0'),
+      spawnLogPath: log,
+    );
+    expect(File(log).readAsLinesSync().single, contains('"wait":false'));
+  });
+
+  test('a broken spawnLogPath never breaks the launch', () async {
+    final code = await launchConfined(
+      profilePath: '/dev/null',
+      command: const [],
+      backend: backend('exit 0'),
+      wait: true,
+      spawnLogPath: '${tmp.path}/no-such-dir/log.jsonl',
+    );
+    expect(code, 0, reason: 'diagnostics are best-effort');
+  });
 }
