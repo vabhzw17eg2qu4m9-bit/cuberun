@@ -77,7 +77,10 @@ the shell's job control reclaim the tty, orphaning the harness's pgrp
 in the background — where raw-mode `tcsetattr` returns EIO and TUIs
 die with `setRawMode EIO` at startup. `--wait` (before the profile)
 forces the blocking shape everywhere; `--spawn-exit` forces the legacy
-spawn-and-exit from a terminal; the two are mutually exclusive
+spawn-and-exit from a terminal — which hands the tty back to the
+shell's job control immediately, i.e. the v0.3.1 raw-mode hazard #81
+fixes; it is meant for headless-shape automation, not TUIs; the two
+are mutually exclusive
 (exit 2). In every mode, on every launch path (fresh build, cache hit,
 rebuild), the spawn is identical: inherited stdio, no detach, no new
 session — and the harness's SIGINT death is what surfaces, because the

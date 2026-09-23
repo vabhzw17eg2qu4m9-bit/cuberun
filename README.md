@@ -58,7 +58,10 @@ cube-sandbox clean                      # wipe <cwd>/.cube-sandbox/cache (run be
   shape everywhere; `--spawn-exit` forces the legacy spawn-and-exit
   from a terminal. **Automation note (vs v0.3.1):** callers attached
   to a pty (docker -t, tmux panes, CI with a tty) now get the blocking
-  shape by default — pass `--spawn-exit` to keep spawn-and-exit.
+  shape by default — pass `--spawn-exit` to keep spawn-and-exit (from a
+  terminal that hands the tty back to the shell immediately — the exact
+  raw-mode hazard #81 fixes — so it is for headless-shape automation,
+  not TUIs).
 - **Terminal inheritance on every launch path** — the spawn is
   byte-identical whether the profile was freshly staged, cache-hit, or
   rebuilt after an edit: caller's stdio, no detach, no new session, no

@@ -23,13 +23,21 @@ import '../helpers/e2e_helpers.dart' as h;
 /// E6: SIGINT to the waiting launcher surfaces the harness's mapped
 /// death (130 — trap or mapped signal), never the launcher's own.
 ///
+/// Platform facts this battery is built on (pinned, never silent):
+/// - ps UNDER the profile is not reliable on newer macOS (E2E-7
+///   precedent) — the probe publishes its own pid, and pgid/tpgid are
+///   measured mid-flight from the UNCONFINED test process.
+/// - script(1) exits at its direct child's death; the pty master then
+///   closes and the orphaned harness gets SIGHUP. Scripts that must
+///   outlive the launcher ignore HUP explicitly.
+/// - Wrapper exit status is intentionally NOT asserted — script(1)
+///   propagation is not part of this contract; behavioral truth comes
+///   from probe output, spawn records, staging state, and external ps.
+///
 /// Runs the compiled binary against the real sandbox-exec backend; every
 /// pty test needs a working kernel AND a working script(1), so guards
 /// skip loudly when the host lacks one (agent dev cubes deny
-/// openpty/sandbox_apply). Wrapper exit status is intentionally NOT
-/// asserted — script(1) propagation semantics are not part of this
-/// contract; all behavioral truth comes from probe output, the spawn
-/// log, and staging state.
+/// openpty/sandbox_apply).
 void main() {
   final String? skipKernel = h.nestedSandboxDeniedReason();
 
@@ -100,15 +108,17 @@ spec:
     proj = '${tmp.path}/proj';
     Directory('$proj/.cube-sandbox').createSync(recursive: true);
     // Raw-mode probe: the exact syscall class the reporter's pi dies on
-    // (tcsetattr), plus a labeled pgrp/foreground fingerprint for IT-2
-    // (separate -o calls; immune to column spacing and CR translation).
+    // (tcsetattr), then publishes its pid and holds the foreground for
+    // HOLD seconds so the test can measure pgid/tpgid mid-flight from
+    // OUTSIDE the sandbox (ps under the profile is unreliable — E2E-7).
     probeSh = writeScript('probe', '''
 if stty raw -echo 2>/dev/null; then
   echo RAW-OK
 else
   echo RAW-FAIL
 fi
-echo "PGRP-\$(ps -o pgid= -p \$\$ | tr -d ' ')-\$(ps -o tpgid= -p \$\$ | tr -d ' ')-END"
+printf '%s\\n' "\$\$" > "\$PUB"
+sleep "\$HOLD"
 ''');
   });
 
@@ -117,16 +127,60 @@ echo "PGRP-\$(ps -o pgid= -p \$\$ | tr -d ' ')-\$(ps -o tpgid= -p \$\$ | tr -d '
     ...?extra,
   };
 
-  /// Launches the compiled binary under script(1): stdin is a pty, so
-  /// the tty-wait default engages — the launcher holds the foreground
-  /// and the probe output (plus banner/warnings) comes back merged.
-  Future<String> startPty(List<String> args, {Map<String, String>? extraEnv}) {
-    return Process.start(
-      '/usr/bin/script',
-      ['-q', '/dev/null', h.ensureBinary(), 'launch', ...args],
-      workingDirectory: proj,
-      environment: env(extraEnv),
-    ).then((p) async => p.stdout.transform(utf8.decoder).join());
+  /// Launches the compiled binary under script(1) WITHOUT waiting for
+  /// completion: stdin is a pty, so the tty-wait default engages and the
+  /// launcher holds the foreground while the probe sleeps.
+  Future<Process> spawnPty(
+    List<String> args, {
+    Map<String, String>? extraEnv,
+  }) => Process.start(
+    '/usr/bin/script',
+    ['-q', '/dev/null', h.ensureBinary(), 'launch', ...args],
+    workingDirectory: proj,
+    environment: env(extraEnv),
+  );
+
+  /// Waits for the probe to publish its pid, measures pgid/tpgid from
+  /// the unconfined test process, then collects the full launch output.
+  Future<({String out, int pgid, int tpgid})> launchPty(
+    List<String> args, {
+    required String pubPath,
+    Map<String, String>? extraEnv,
+    String hold = '4',
+  }) async {
+    if (File(pubPath).existsSync()) File(pubPath).deleteSync();
+    final p = await spawnPty(
+      args,
+      extraEnv: {...?extraEnv, 'PUB': pubPath, 'HOLD': hold},
+    );
+    final deadline = DateTime.now().add(const Duration(seconds: 30));
+    String? pid;
+    while (pid == null && DateTime.now().isBefore(deadline)) {
+      final f = File(pubPath);
+      if (f.existsSync()) {
+        final t = f.readAsStringSync().trim();
+        if (t.isNotEmpty) pid = t;
+      }
+      if (pid == null) sleep(const Duration(milliseconds: 50));
+    }
+    expect(pid, isNotNull, reason: 'probe never published its pid to $pubPath');
+
+    int psInt(String expr) {
+      final r = Process.runSync('/bin/sh', ['-c', expr]);
+      final t = (r.stdout as String).trim();
+      expect(
+        t,
+        isNotEmpty,
+        reason: 'ps produced no output for "$expr" (exit ${r.exitCode})',
+      );
+      return int.parse(t);
+    }
+
+    final pgid = psInt('ps -o pgid= -p $pid');
+    final tpgid = psInt('ps -o tpgid= -p $pid');
+    final out = await p.stdout.transform(utf8.decoder).join();
+    await p.exitCode;
+    return (out: out, pgid: pgid, tpgid: tpgid);
   }
 
   List<String> stagedProfiles() =>
@@ -138,55 +192,49 @@ echo "PGRP-\$(ps -o pgid= -p \$\$ | tr -d ' ')-\$(ps -o tpgid= -p \$\$ | tr -d '
           .toList()
         ..sort();
 
-  void expectForeground(String out) {
-    // IT-2: the child pgrp OWNS the tty foreground (pgid == tpgid) —
-    // the launcher held it, nothing backgrounded the harness.
-    final flat = out.replaceAll('\r', '');
-    final matches = RegExp(r'PGRP-(\d+)-(\d+)-END').allMatches(flat).toList();
+  void expectForeground(String out, {required int pgid, required int tpgid}) {
     expect(
-      matches,
-      isNotEmpty,
-      reason: 'no PGRP line in probe output — full output:\n$flat',
+      out,
+      contains('RAW-OK'),
+      reason: 'raw-mode probe must succeed — output:\n$out',
     );
-    final pgid = matches.last.group(1)!;
-    final tpgid = matches.last.group(2)!;
-    expect(
-      pgid,
-      tpgid,
-      reason: 'child pgrp must be foreground — full output:\n$flat',
-    );
+    // IT-2: the child pgrp OWNS the tty foreground (pgid == tpgid),
+    // measured mid-flight from outside — the launcher held it, nothing
+    // backgrounded the harness.
+    expect(pgid, tpgid, reason: 'child pgrp must be foreground (IT-2)');
   }
 
   kernelPtyTest('E2E-1/AC1+AC2+AC3: raw-mode probe survives cold, cache-hit, '
       'argv-variance and emit-identical-edit launches', () async {
     final log = '$proj/spawn.jsonl';
+    final pub = '$proj/probe-pid';
     writeManifest('tty1');
 
     // L1 — cold cache.
-    final out1 = await startPty(
+    final r1 = await launchPty(
       ['tty1', '--session', 'u-1'],
+      pubPath: pub,
       extraEnv: {'CUBE_SANDBOX_SPAWN_LOG': log},
     );
-    expect(out1, contains('RAW-OK'), reason: 'cold launch must keep raw mode');
-    expect(out1, isNot(contains('provenance refreshed')));
-    expectForeground(out1);
+    expectForeground(r1.out, pgid: r1.pgid, tpgid: r1.tpgid);
+    expect(r1.out, isNot(contains('provenance refreshed')));
     expect(stagedProfiles(), hasLength(1));
     final records = File(log).readAsLinesSync();
     expect(records, hasLength(1));
-    final r1 = jsonDecode(records[0]) as Map<String, dynamic>;
-    expect(r1['backend'], 'sandbox-exec');
-    expect(r1['mode'], 'inheritStdio');
-    expect(r1['wait'], isTrue, reason: 'pty caller holds foreground');
-    expect((r1['argv'] as List).last, 'u-1');
+    final j1 = jsonDecode(records[0]) as Map<String, dynamic>;
+    expect(j1['backend'], 'sandbox-exec');
+    expect(j1['mode'], 'inheritStdio');
+    expect(j1['wait'], isTrue, reason: 'pty caller holds foreground');
+    expect((j1['argv'] as List).last, 'u-1');
 
     // L2 — cache-hit, IDENTICAL arguments: AC2's record-equality pair.
-    final out2 = await startPty(
+    final r2 = await launchPty(
       ['tty1', '--session', 'u-1'],
+      pubPath: pub,
       extraEnv: {'CUBE_SANDBOX_SPAWN_LOG': log},
     );
-    expect(out2, contains('RAW-OK'), reason: 'cache-hit keeps raw mode');
-    expect(out2, isNot(contains('provenance refreshed')));
-    expectForeground(out2);
+    expectForeground(r2.out, pgid: r2.pgid, tpgid: r2.tpgid);
+    expect(r2.out, isNot(contains('provenance refreshed')));
     expect(stagedProfiles(), hasLength(1), reason: 'same key10, no rebuild');
     final records2 = File(log).readAsLinesSync();
     expect(records2, hasLength(2));
@@ -199,37 +247,34 @@ echo "PGRP-\$(ps -o pgid= -p \$\$ | tr -d ' ')-\$(ps -o tpgid= -p \$\$ | tr -d '
     // L3 — DIFFERENT volatile argv (C2-only): same key10, no new
     // staging, no warning. The RECORD differs in the verbatim tail by
     // design (#43) — only the KEY must not move.
-    final out3 = await startPty(
+    final r3 = await launchPty(
       ['tty1', '--session', 'u-2-sentinel-different-argv'],
+      pubPath: pub,
       extraEnv: {'CUBE_SANDBOX_SPAWN_LOG': log},
     );
-    expect(out3, contains('RAW-OK'), reason: 'argv variance keeps raw mode');
-    expect(out3, isNot(contains('provenance refreshed')));
+    expectForeground(r3.out, pgid: r3.pgid, tpgid: r3.tpgid);
+    expect(r3.out, isNot(contains('provenance refreshed')));
     expect(stagedProfiles(), hasLength(1), reason: 'volatile argv: same key');
     final records3 = File(log).readAsLinesSync();
-    final r3 = jsonDecode(records3[2]) as Map<String, dynamic>;
-    expect((r3['argv'] as List).last, 'u-2-sentinel-different-argv');
-    expect(r3['argv'], isNot(r1['argv']), reason: 'tail rides argv (#43)');
+    final j3 = jsonDecode(records3[2]) as Map<String, dynamic>;
+    expect((j3['argv'] as List).last, 'u-2-sentinel-different-argv');
+    expect(j3['argv'], isNot(j1['argv']), reason: 'tail rides argv (#43)');
     expect(
-      (r3['argv'] as List).take(2),
-      (r1['argv'] as List).take(2),
+      (j3['argv'] as List).take(2),
+      (j1['argv'] as List).take(2),
       reason: 'same staged profile path — the key never moved',
     );
 
     // L4 — emit-identical edit (description only): SAME key10, loud
     // provenance re-tie (#70), spawn record back to byte-identical.
-    final manifestPath = '$proj/.cube-sandbox/tty1.yaml';
     writeManifest('tty1', description: 'edited');
-    expect(
-      File(manifestPath).readAsStringSync(),
-      contains('description: edited'),
-    );
-    final out4 = await startPty(
+    final r4 = await launchPty(
       ['tty1', '--session', 'u-1'],
+      pubPath: pub,
       extraEnv: {'CUBE_SANDBOX_SPAWN_LOG': log},
     );
-    expect(out4, contains('RAW-OK'), reason: 'after-edit keeps raw mode');
-    expect(out4, contains('provenance refreshed'), reason: '#70 loudness');
+    expectForeground(r4.out, pgid: r4.pgid, tpgid: r4.tpgid);
+    expect(r4.out, contains('provenance refreshed'), reason: '#70 loudness');
     expect(stagedProfiles(), hasLength(1), reason: 'emit-identical: same key');
     final records4 = File(log).readAsLinesSync();
     expect(records4, hasLength(4));
@@ -238,32 +283,33 @@ echo "PGRP-\$(ps -o pgid= -p \$\$ | tr -d ' ')-\$(ps -o tpgid= -p \$\$ | tr -d '
       records4[0],
       reason: 'same emit + same argv => same spawn record',
     );
-  }, timeout: const Timeout(Duration(minutes: 2)));
+  }, timeout: const Timeout(Duration(minutes: 4)));
 
   kernelPtyTest(
     'E2E-3/AC3: a real emit-input change rebuilds under a NEW key and '
     'raw mode survives the rebuild path',
     () async {
       final log = '$proj/spawn.jsonl';
+      final pub = '$proj/probe-pid';
       writeManifest('tty2');
-      final out1 = await startPty(
-        'tty2'.split(' '),
+      final r1 = await launchPty(
+        const ['tty2'],
+        pubPath: pub,
         extraEnv: {'CUBE_SANDBOX_SPAWN_LOG': log},
       );
-      expect(out1, contains('RAW-OK'));
-      expectForeground(out1);
-      final key1 = RegExp(r'profile ([0-9a-f]{10})').firstMatch(out1)![1]!;
+      expectForeground(r1.out, pgid: r1.pgid, tpgid: r1.tpgid);
+      final key1 = RegExp(r'profile ([0-9a-f]{10})').firstMatch(r1.out)![1]!;
       expect(stagedProfiles(), hasLength(1));
 
       // Widen extraWrite — a pinned emit input (#69): lawful rebuild.
       writeManifest('tty2', extraWrite: '\n  extraWrite: [~/.codemie]');
-      final out2 = await startPty(
+      final r2 = await launchPty(
         const ['tty2'],
+        pubPath: pub,
         extraEnv: {'CUBE_SANDBOX_SPAWN_LOG': log},
       );
-      expect(out2, contains('RAW-OK'), reason: 'rebuild path keeps raw mode');
-      expectForeground(out2);
-      final key2 = RegExp(r'profile ([0-9a-f]{10})').firstMatch(out2)![1]!;
+      expectForeground(r2.out, pgid: r2.pgid, tpgid: r2.tpgid);
+      final key2 = RegExp(r'profile ([0-9a-f]{10})').firstMatch(r2.out)![1]!;
       expect(key2, isNot(key1), reason: 'semantic change must change the key');
       expect(stagedProfiles(), hasLength(2), reason: 'new key staged');
 
@@ -281,7 +327,7 @@ echo "PGRP-\$(ps -o pgid= -p \$\$ | tr -d ' ')-\$(ps -o tpgid= -p \$\$ | tr -d '
       expect(argvB[1], isNot(argvA[1]), reason: 'new key10 profile path');
       expect(argvB.sublist(2), argvA.sublist(2), reason: 'harness argv equal');
     },
-    timeout: const Timeout(Duration(minutes: 2)),
+    timeout: const Timeout(Duration(minutes: 3)),
   );
 
   kernelPtyTest(
@@ -289,7 +335,13 @@ echo "PGRP-\$(ps -o pgid= -p \$\$ | tr -d ' ')-\$(ps -o tpgid= -p \$\$ | tr -d '
     () async {
       final log = '$proj/spawn.jsonl';
       final mark = '$proj/spawn-exit-done';
-      final markSh = writeScript('marker', 'sleep 3\nprintf done > "\$MARK"\n');
+      // Ignores HUP on purpose: script(1) exits when the launcher does,
+      // the pty master closes and the orphan gets SIGHUP — it must
+      // survive to finish its write (signals after cube's exit, E2E-5).
+      final markSh = writeScript(
+        'marker',
+        "trap '' HUP\nsleep 3\nprintf done > \"\$MARK\"\n",
+      );
       File('$proj/.cube-sandbox/tty3.yaml').writeAsStringSync('''
 apiVersion: cube-sandbox/v1
 kind: Harness
@@ -301,10 +353,11 @@ spec:
     - $markSh
   agentRoot: $proj
 ''');
-      final out = await startPty(
+      final p = await spawnPty(
         ['--spawn-exit', 'tty3'],
         extraEnv: {'CUBE_SANDBOX_SPAWN_LOG': log, 'MARK': mark},
       );
+      final out = await p.stdout.transform(utf8.decoder).join();
       expect(out, contains('under cube-sandbox'), reason: 'banner printed');
       final lines = File(log).readAsLinesSync();
       expect(
@@ -312,14 +365,19 @@ spec:
         isFalse,
         reason: 'tty caller forced spawn-and-exit — #53 opt-out honored',
       );
-      // The orphaned harness still finishes on the inherited fds (the
-      // wrapper's own exit semantics are backend-defined and not part
-      // of this contract; the immediate-exit property is covered by the
+      // The orphaned harness still finishes its write (the wrapper's
+      // own exit semantics are backend-defined and not part of this
+      // contract; the immediate-exit property is covered by the
       // headless spawn-and-exit E2E).
       final deadline = DateTime.now().add(const Duration(seconds: 30));
       while (!File(mark).existsSync() && DateTime.now().isBefore(deadline)) {
         sleep(const Duration(milliseconds: 50));
       }
+      expect(
+        File(mark).existsSync(),
+        isTrue,
+        reason: 'orphaned harness must survive the launcher and finish',
+      );
       expect(File(mark).readAsStringSync(), 'done');
     },
     timeout: const Timeout(Duration(minutes: 2)),
