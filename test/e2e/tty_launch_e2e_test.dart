@@ -338,11 +338,14 @@ sleep "\$HOLD"
       // From a tty, --spawn-exit hands the terminal back immediately and
       // Unix tears the orphan's session down on master close (HUP) —
       // that is the DOCUMENTED v0.3.1 hazard (#81), not a launcher bug.
-      // So this asserts the CONTRACT, not child survival (survival is
-      // pinned headless by launch_spawn_exit_e2e E2E-1/E2E-7, green on
-      // CI): fast return, banner, wait:false record, harness started.
-      final started = '$proj/spawn-exit-started';
-      final markSh = writeScript('marker', 'printf started > "\$STARTED"\n');
+      // The teardown races the harness's FIRST instruction, so nothing
+      // about child progress is assertable here (survival is pinned
+      // headless by launch_spawn_exit_e2e E2E-1/E2E-7, green on CI).
+      // The contract, all stable: fast return while the harness is
+      // still sleeping (a wrongly-waiting launcher would take 8s+),
+      // banner, and a wait:false record — written only after a
+      // successful spawn, so it doubles as spawn-success proof.
+      final markSh = writeScript('marker', 'sleep 8\n');
       File('$proj/.cube-sandbox/tty3.yaml').writeAsStringSync('''
 apiVersion: cube-sandbox/v1
 kind: Harness
@@ -357,16 +360,16 @@ spec:
       final t0 = DateTime.now();
       final p = await spawnPty(
         ['--spawn-exit', 'tty3'],
-        extraEnv: {'CUBE_SANDBOX_SPAWN_LOG': log, 'STARTED': started},
+        extraEnv: {'CUBE_SANDBOX_SPAWN_LOG': log},
       );
       final out = await p.stdout.transform(utf8.decoder).join();
       final elapsed = DateTime.now().difference(t0);
       expect(
         elapsed,
-        lessThan(const Duration(seconds: 10)),
+        lessThan(const Duration(seconds: 5)),
         reason:
             'launcher must return immediately from a tty '
-            '(spawn-and-exit), not wait for the harness',
+            '(spawn-and-exit), not wait for the harness (sleep 8)',
       );
       expect(out, contains('under cube-sandbox'), reason: 'banner printed');
       final lines = File(log).readAsLinesSync();
@@ -374,15 +377,6 @@ spec:
         jsonDecode(lines.single)['wait'],
         isFalse,
         reason: 'tty caller forced spawn-and-exit — #53 opt-out honored',
-      );
-      final deadline = DateTime.now().add(const Duration(seconds: 10));
-      while (!File(started).existsSync() && DateTime.now().isBefore(deadline)) {
-        sleep(const Duration(milliseconds: 50));
-      }
-      expect(
-        File(started).existsSync(),
-        isTrue,
-        reason: 'harness started inside the boundary before the return',
       );
     },
     timeout: const Timeout(Duration(minutes: 2)),
