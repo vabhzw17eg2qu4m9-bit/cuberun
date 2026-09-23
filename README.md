@@ -17,8 +17,10 @@ cannot do this (they load after the agent starts); the launcher is the
 only seam that confines everything.
 
 ```
-cube-sandbox launch pi                     # launch pi confined — spawn-and-exit
-cube-sandbox launch --wait pi              # ... or block and forward the exit code
+cube-sandbox launch pi                     # launch pi confined — from a terminal, holds
+                                           # the foreground for pi; headless: spawn-and-exit
+cube-sandbox launch --wait pi              # always block + forward the exit code
+cube-sandbox launch --spawn-exit pi        # always spawn-and-exit, even from a terminal
 cube-sandbox launch --use-github pi        # + gh config/git identity (read-only)
 cube-sandbox launch omp --resume <id>      # args after the profile go to the harness
 cube-sandbox launch fa -- git status       # confine an arbitrary command
@@ -45,13 +47,29 @@ cube-sandbox clean                      # wipe <cwd>/.cube-sandbox/cache (run be
   Per-task denies are the inner cubes' job (two-layer model).
 - **Fail-closed** — missing/rejecting backend means the command does NOT
   run unconfined: exit 126 + diagnostic.
-- **Spawn-and-exit** — `launch` exits 0 once the confined harness is
-  running (the exit code is the spawn status, not the harness's). The
-  kernel enforces the boundary on the harness process itself: its fds,
-  the terminal's Ctrl-C and launchd reparenting all work without a
-  resident parent. `--wait` opts back into blocking + exit forwarding.
-- **Signal faithfulness** — under `--wait`, a child killed by signal n
-  makes the launcher exit `128 + n`.
+- **Spawn-and-exit (headless) / foreground-hold (tty)** — for headless
+  callers, `launch` exits 0 once the confined harness is running (the
+  exit code is the spawn status, not the harness's). For a caller with
+  a terminal on stdin, the launcher instead **holds the foreground for
+  the harness's lifetime** (issue #81): exiting first would hand the
+  tty back to the shell's job control, leaving the harness's process
+  group orphaned in the background — where raw-mode `tcsetattr` dies
+  with EIO and TUIs crash at startup. `--wait` forces the blocking
+  shape everywhere; `--spawn-exit` forces the legacy spawn-and-exit
+  from a terminal.
+- **Terminal inheritance on every launch path** — the spawn is
+  byte-identical whether the profile was freshly staged, cache-hit, or
+  rebuilt after an edit: caller's stdio, no detach, no new session, no
+  re-parenting. The profile itself never names tty devices and never
+  denies raw-mode ioctls — `(allow default)` covers them, and the
+  byte-level audit tests pin that. Equivalence is asserted by tests
+  (`CUBE_SANDBOX_SPAWN_LOG` records each spawn) and the manual repro
+  below, not assumed from source shape.
+- **Signal faithfulness** — under `--wait` (and any tty launch), a
+  child killed by signal n makes the launcher exit `128 + n`; a Ctrl-C
+  on a real terminal reaches the harness, and the launcher ignores its
+  own copy of the SIGINT so the harness's death — not cube-sandbox's —
+  is what surfaces.
 - **Grants, never gates** — cube-sandbox never inspects, allows or forbids
   commands; the kernel folder boundary is the only gate.
 
@@ -83,8 +101,17 @@ Every launch re-resolves the manifest and re-emits the profile; staged
 files are content-addressed (`key10` = first 10 hex of md5 of the profile
 text), so **any change to the resolved configuration ⇒ a different key10 ⇒
 the next launch runs the current configuration** — a stale `.sb` can never
-be picked when the source that produced it changed. Each staged
-`harness-<key10>.sb` keeps a `.src` provenance stamp beside it (a
+be picked when the source that produced it changed.
+
+**What the key sees (rebuilds) vs never sees (no rebuild):** key10 is a
+pure function of the emitted profile — the manifest spec fields, the
+`--use-*` service flags, the `CUBE_SANDBOX_EXTRA_READ` / `_WRITE` env
+knobs, and `realpath($TMPDIR)`. Per-launch volatile argv — `--session`
+uuids, `-e` extension args, anything after the profile name — rides the
+harness's argv verbatim and **never changes the key**: identical config +
+different session id ⇒ same `key10`, no rewrite, no warning.
+
+Each staged `harness-<key10>.sb` keeps a `.src` provenance stamp beside it (a
 fingerprint of the resolved source document); if the same key is ever
 re-staged from a changed source, launch says so loudly:
 
@@ -134,14 +161,58 @@ stays out of every profile by construction), so a confined
 - `CUBE_SANDBOX_EXTRA_READ` — colon-separated read-only grants (`~` ok)
 - `CUBE_SANDBOX_EXTRA_WRITE` — colon-separated read-write grants; blocklisted
   paths are rejected outright
+- `CUBE_SANDBOX_SPAWN_LOG` — path; each `launch` appends one JSON line
+  describing the spawn (`backend` / `argv` / `mode` / `wait`). Diagnostics
+  for terminal-control issues: every launch path must produce an identical
+  record for identical arguments. A broken path never fails a launch.
+
+## Interactive TUIs & terminal control (issue #81)
+
+TUI harnesses need raw-mode terminal input (`tcsetattr` on the tty). The
+launcher's contract, enforced on **every** launch path (fresh build,
+cache hit, rebuild-after-edit; spawn-and-exit and `--wait`):
+
+1. **Inherited stdio** — the harness gets the caller's stdin/stdout/stderr
+   (`ProcessStartMode.inheritStdio`, no detach, no new session, no
+   re-parenting). Asserted by IT tests via `CUBE_SANDBOX_SPAWN_LOG`.
+2. **Foreground continuity** — from a terminal, cube-sandbox stays the
+   foreground job for the harness's lifetime, so the shell's job control
+   never hands the tty away from under the harness. Headless callers keep
+   spawn-and-exit (#53): the parent leaves immediately, the kernel keeps
+   the boundary.
+3. **No tty rules in the profile** — the emitted SBPL never names
+   `/dev/tty*`, never denies ioctls; raw mode needs **zero** grants, and
+   grant-widening for terminal trouble would only weaken confinement.
+
+**Manual repro / verification (needs a real terminal — CI has no tty):**
+in a terminal, run the reporter's scenario in all three states and confirm
+the TUI (or `stty raw -echo`) works each time:
+
+```
+cube-sandbox clean                                                  # state 1: cold cache
+CUBE_SANDBOX_SPAWN_LOG=/tmp/spawn.jsonl cube-sandbox launch <profile> \
+  -e extensions/pi-pi.ts --session 01a0be35-369a-76ea-9cde-c4b2d48cc79c
+cube-sandbox launch <profile> --session <different-uuid>            # state 2: cache-hit
+# edit the manifest (e.g. widen extraWrite), then relaunch          # state 3: rebuild
+cat /tmp/spawn.jsonl                                                # identical spawn records
+```
+
+Expected: the harness reaches its TUI with no `setRawMode EIO`; state 2
+shows the same `profile <key10>` as state 1 and no warnings; state 3
+rebundles under a new key only if a pinned emit input changed; the spawn
+log records byte-identical spawns for identical arguments. If raw mode
+still fails, capture the spawn log plus `ps -o pid,ppid,pgid,tpgid,stat,tt
+-p <harness-pid>` — a background/orphaned state (`tpgid != pgid`) points
+at the outer environment (SSH without pty, nested sandbox, wrapper), not
+at the profile.
 
 ## Exit codes
 
-`0` ok — for `launch`, spawn success: the confined harness is running
-and outlives cube-sandbox (spawn-and-exit) · `1` probe failure · `2`
-config error · `64` usage · `126` fail-closed (backend
-missing/rejecting) · under `launch --wait`, the harness's own code
-(signal n ⇒ 128+n).
+`0` ok — for `launch` headless, spawn success: the confined harness is
+running and outlives cube-sandbox (spawn-and-exit) · from a terminal or
+under `launch --wait`, the harness's own code (signal n ⇒ 128+n) · `1`
+probe failure · `2` config error · `64` usage · `126` fail-closed
+(backend missing/rejecting).
 
 ## Docs & agent skill
 

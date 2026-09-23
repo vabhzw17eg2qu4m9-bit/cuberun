@@ -82,11 +82,15 @@ parser is the law. Full reference: `docs/config.md` in the cube-sandbox repo.
    cube-sandbox launch --use-github <name>     # service grants BEFORE the profile
    cube-sandbox launch omp --resume <id>       # args AFTER the profile go to the harness
    ```
-   Launch is spawn-and-exit: cube-sandbox exits 0 once the confined
-   harness is running (exit = spawn status; 126 = fail-closed, nothing
-   ran) and the harness keeps running confined on its own. `--wait`
-   (before the profile) blocks and forwards the harness exit code
-   (signal n ⇒ 128+n) instead.
+   Launch is spawn-and-exit for headless callers: cube-sandbox exits 0
+   once the confined harness is running (exit = spawn status; 126 =
+   fail-closed, nothing ran) and the harness keeps running confined on
+   its own. From a TERMINAL the launcher instead holds the foreground
+   until the harness exits and forwards its code — so TUIs keep raw
+   mode (issue #81); `--spawn-exit` forces spawn-and-exit there, and
+   `--wait` (before the profile) forces the blocking shape everywhere
+   (signal n ⇒ 128+n). Per-launch argv after the profile (`--session`
+   uuids, `-e` args) never changes the staged profile key.
 5. **Cache semantics (rebuild is automatic).** Launches stage
    `.cube-sandbox/cache/harness-<key10>.sb`; any manifest edit ⇒ a new
    key10 ⇒ the NEXT launch rebuilds and runs the current configuration —
