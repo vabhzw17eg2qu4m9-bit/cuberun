@@ -3,7 +3,7 @@ description: >-
   Kernel-confined launcher for AI coding harnesses: wraps the whole
   harness process tree (pi / omp / fa) in a macOS sandbox-exec Layer-0
   profile resolved from a strict yaml manifest.
-version: 0.3.1
+version: 0.4.0
 homepage: https://github.com/vabhzw17eg2qu4m9-bit/cuberun
 repository: https://github.com/vabhzw17eg2qu4m9-bit/cuberun
 
