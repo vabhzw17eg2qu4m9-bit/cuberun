@@ -154,9 +154,11 @@ String runtimePrefix(String binDir) {
 /// they merge between the service grants and the env knobs.
 ///
 /// Throws [ConfigException] when a DECLARATIVE source (manifest paths,
-/// service catalog, EXTRA_WRITE env knob) touches an ungrantable root
-/// (E10). `CUBE_SANDBOX_EXTRA_READ` is the single operator escape hatch:
-/// honored, never silent — it lands in `warnings`.
+/// service catalog, EXTRA_WRITE env knob, folder-group write) touches an
+/// ungrantable root (E10). The operator escape hatches are the
+/// human-typed `CUBE_SANDBOX_EXTRA_READ` env knob and a blocklisted
+/// folder-group `read:` — both honored, never silent (loud ⚠ banner
+/// via `warnings`).
 HarnessRuntime resolveRuntime(
   HarnessSpec spec, {
   required Set<String> services,
