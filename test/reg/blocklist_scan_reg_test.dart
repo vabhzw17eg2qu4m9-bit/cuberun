@@ -1,3 +1,4 @@
+import 'package:cube_sandbox/src/folder_groups.dart';
 import 'package:cube_sandbox/src/presets.dart';
 import 'package:cube_sandbox/src/runtime.dart';
 import 'package:cube_sandbox/src/sbpl.dart';
@@ -74,6 +75,81 @@ void main() {
       );
     },
   );
+
+  // --- Issue #101: folder groups obey the same per-direction contract.
+
+  test('a selected group write: hitting a blocklisted root throws (E8)', () {
+    for (final p in [
+      '$home/.gnupg',
+      '$home/.ssh',
+      '$home/Library/Keychains',
+      '/private$home/.gnupg',
+    ]) {
+      final doc = parseFolderGroups(
+        'apiVersion: cube-sandbox/v1\ngroups:\n  g:\n    write: [$p]\n',
+        path: '$home/.cube-sandbox/folders.yaml',
+        home: home,
+      );
+      expect(
+        () => resolveFolderGroups(doc, ['g'], home: home),
+        throwsA(isA<Exception>()),
+        reason: 'write: [$p] must be rejected',
+      );
+    }
+  });
+
+  test(
+    'a selected group read: hitting a blocklisted root warns + honors (E9)',
+    () {
+      final doc = parseFolderGroups(
+        'apiVersion: cube-sandbox/v1\ngroups:\n  g:\n    read: [~/.gnupg]\n',
+        path: '$home/.cube-sandbox/folders.yaml',
+        home: home,
+      );
+      final s = resolveFolderGroups(doc, ['g'], home: home);
+      expect(s.read, ['$home/.gnupg']);
+      expect(s.warnings, hasLength(1));
+      expect(s.warnings.single, contains('NEVER silent'));
+    },
+  );
+
+  test('no emitted profile with folder grants touches a blocklisted root', () {
+    final doc = parseFolderGroups(
+      'apiVersion: cube-sandbox/v1\ngroups:\n'
+      '  wide:\n'
+      '    write: [$home/work/wide, /Volumes/data/wide]\n'
+      '    read: [$home/Library/Caches/big]\n',
+      path: '$home/.cube-sandbox/folders.yaml',
+      home: home,
+    );
+    final s = resolveFolderGroups(doc, ['wide'], home: home);
+    final text = emitProfile(
+      resolveRuntime(
+        HarnessPresets.load('pi'),
+        services: const {},
+        cwd: '/Users/dev/proj',
+        home: home,
+        env: {'TMPDIR': '/private/var/folders/t/T1'},
+        fs: _NoIO(),
+        folderRead: s.read,
+        folderWrite: s.write,
+      ),
+    ).text;
+    for (final suffix in kUngrantableHomeSuffixes) {
+      for (final spelling in bothSpellingsOf('$home/$suffix')) {
+        expect(
+          text.contains('(allow file-write* (subpath "$spelling")'),
+          isFalse,
+          reason: 'leaked grant $spelling',
+        );
+        expect(
+          text.contains('(allow file-read* (subpath "$spelling")'),
+          isFalse,
+          reason: 'leaked read grant $spelling',
+        );
+      }
+    }
+  });
 }
 
 final class _NoIO implements RuntimeIO {

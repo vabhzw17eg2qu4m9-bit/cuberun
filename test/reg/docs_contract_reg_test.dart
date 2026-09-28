@@ -82,4 +82,51 @@ void main() {
       reason: 'config.md terminal section must pin the from-tty hazard',
     );
   });
+
+  // --- Issue #101: per-run folder groups (--folders) are documented.
+
+  test('README documents folder groups: schema, selection, key10 inputs', () {
+    final readme = read('README.md');
+    expect(readme, contains('Folder groups (`--folders`)'));
+    expect(readme, contains('folders.yaml'));
+    expect(readme, contains('--folders projectA,projectB'));
+    // key10-inputs list gains the selection.
+    expect(readme, contains('selected folder groups'));
+    // The writes allow-list sentence names folder groups.
+    expect(readme, contains('folder groups (`--folders`)'));
+  });
+
+  test(
+    'README escape-hatch wording stays truthful with two loud read paths',
+    () {
+      final readme = read('README.md');
+      // No longer "the single" escape hatch: blocklisted folder-group reads
+      // are honored too, equally loud.
+      expect(readme, isNot(contains('single operator escape hatch')));
+      expect(readme, contains('operator escape hatches'));
+    },
+  );
+
+  test('docs/config.md documents folder groups end to end', () {
+    final config = read('docs/config.md');
+    // Source-of-truth list gains the module.
+    expect(config, contains('folder_groups.dart'));
+    // argv-contract sentence gains --folders.
+    expect(config, contains('--folders'));
+    // Precedence-vs-layering note.
+    expect(config, contains('LAYERS'));
+    // Grants-merge order gains folder groups before env knobs.
+    expect(config, contains('folder groups → env knobs'));
+    // Ungrantable per-source coverage names the folder-groups direction.
+    expect(config, contains('folder groups'));
+    // The groups file schema section exists.
+    expect(config, contains('~/.cube-sandbox/folders.yaml'));
+  });
+
+  test('agent skill covers the groups file and the --folders flag', () {
+    final skill = read('skills/cube-sandbox-config/SKILL.md');
+    expect(skill, contains('--folders'));
+    expect(skill, contains('folders.yaml'));
+    expect(skill, contains('sbpl'));
+  });
 }

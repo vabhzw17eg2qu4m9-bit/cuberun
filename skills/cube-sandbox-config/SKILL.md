@@ -6,7 +6,8 @@ description: >
   define kernel-confined launches of AI harnesses. Covers locating or
   creating a profile, validating it with cube-sandbox sbpl/show, launching
   with cube-sandbox launch, probing the boundary with cube-sandbox probe, adding
-  --use-* service grants, and the E10 blocklist (~/.ssh, ~/.gnupg,
+  --use-* service grants or per-run --folders folder groups
+  (~/.cube-sandbox/folders.yaml), and the E10 blocklist (~/.ssh, ~/.gnupg,
   ~/Library/Keychains are ungrantable). Use when asked to sandbox a
   harness, add/change a cube-sandbox profile or its grants, or debug a
   profile that fails to parse or launch.
@@ -71,7 +72,9 @@ parser is the law. Full reference: `docs/config.md` in the cube-sandbox repo.
    ```sh
    cube-sandbox sbpl <name>                          # parse + emit exact kernel profile
    cube-sandbox sbpl <name> --file <path>.yaml       # validate a file in place
+   cube-sandbox sbpl <name> --folders <group,…>      # validate WITH the per-run selection
    cube-sandbox show <name>                          # resolved rw / ro / denied banner
+   cube-sandbox show <name> --folders <group,…>      # dry-run the widened grants
    ```
    Parse errors name the YAML path (`<file>.spec.command: …`); fix the
    named key, re-run until `sbpl` prints a profile cleanly.
@@ -112,5 +115,17 @@ parser is the law. Full reference: `docs/config.md` in the cube-sandbox repo.
    profile). Flags union + dedup; unknown
    ones fail loudly listing the catalog. To make grants permanent for a
    profile, put the folders in `extraRead`/`extraWrite` instead.
-8. **Report.** File touched, keys changed, grants added (rw vs ro),
+8. **Folder groups (per-run).** ONE user-level file
+   `~/.cube-sandbox/folders.yaml` holds NAMED `read:`/`write:` folder
+   groups (`apiVersion: cube-sandbox/v1`, group names
+   `[a-z0-9][a-z0-9-]*`). A run selects them explicitly:
+   `cube-sandbox launch --folders projectA,projectB <name>`
+   (repeatable, accumulates; also on `show`/`sbpl`/`probe` — dry-run
+   the widened grants there first). The file is never read without the
+   flag; unknown group or missing file is a loud exit 2; token-shape
+   errors exit 64. Blocklist per direction (rule 3): a group's
+   `write:` hitting a blocklisted root is rejected; a `read:` hit is
+   honored with a loud ⚠ banner. The selection changes the staged
+   profile key, so the next launch rebuilds.
+9. **Report.** File touched, keys changed, grants added (rw vs ro),
    `sbpl` + `probe` results, and how to launch.

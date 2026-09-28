@@ -105,9 +105,14 @@ final class HarnessRuntime {
   /// Non-fatal operator acknowledgements (e.g. blocklisted EXTRA_READ).
   final List<String> warnings;
 
-  /// Returns a copy with [extraRead]/[extraWrite] extended (deduped) —
-  /// used by probe variants.
-  HarnessRuntime withGrants({List<String>? read, List<String>? write}) {
+  /// Returns a copy with [extraRead]/[extraWrite] extended (deduped) and
+  /// [warnings] appended (deduped) — used by probe variants and to fold
+  /// the folder-groups layer's loudness into the runtime (issue #101).
+  HarnessRuntime withGrants({
+    List<String>? read,
+    List<String>? write,
+    List<String> warnings = const [],
+  }) {
     List<String> merge(List<String> base, List<String> add) {
       final merged = <String>[...base];
       for (final p in add) {
@@ -124,7 +129,7 @@ final class HarnessRuntime {
       extraWrite: write == null ? extraWrite : merge(extraWrite, write),
       runtimeDirs: runtimeDirs,
       services: services,
-      warnings: warnings,
+      warnings: merge(this.warnings, warnings),
     );
   }
 }
@@ -144,6 +149,10 @@ String runtimePrefix(String binDir) {
 /// Resolves a [HarnessSpec] + `--use-*` services + machine facts into a
 /// [HarnessRuntime].
 ///
+/// [folderRead]/[folderWrite] are the selected folder groups' grants
+/// (issue #101, pre-sanitized + blocklist-checked by folder_groups.dart);
+/// they merge between the service grants and the env knobs.
+///
 /// Throws [ConfigException] when a DECLARATIVE source (manifest paths,
 /// service catalog, EXTRA_WRITE env knob) touches an ungrantable root
 /// (E10). `CUBE_SANDBOX_EXTRA_READ` is the single operator escape hatch:
@@ -155,6 +164,8 @@ HarnessRuntime resolveRuntime(
   String? home,
   Map<String?, String?>? env,
   RuntimeIO fs = const FsRuntimeIO(),
+  List<String> folderRead = const [],
+  List<String> folderWrite = const [],
 }) {
   final cwdResolved = cwd ?? io.Directory.current.path;
   final homeResolved = home ?? io.Platform.environment['HOME'] ?? '/';
@@ -166,6 +177,8 @@ HarnessRuntime resolveRuntime(
     home: homeResolved,
     env: envResolved,
     io: fs,
+    folderRead: folderRead,
+    folderWrite: folderWrite,
   );
 }
 
@@ -180,6 +193,8 @@ HarnessRuntime _resolve(
   required String home,
   required Map<String?, String?> env,
   required RuntimeIO io,
+  List<String> folderRead = const [],
+  List<String> folderWrite = const [],
 }) {
   final agentRoot = _resolveAgentRootPath(spec, home: home, env: env);
 
@@ -222,8 +237,20 @@ HarnessRuntime _resolve(
     projDir: cwd,
     agentRoot: agentRoot,
     tmp: _resolveTmp(env, io),
-    extraRead: _mergeDistinct([manifestRead, grants.read, knobs.read]),
-    extraWrite: _mergeDistinct([manifestWrite, grants.write, knobs.write]),
+    // Merge order pinned (issue #101 AC5): manifest -> services ->
+    // folder groups -> env knobs, first occurrence wins.
+    extraRead: _mergeDistinct([
+      manifestRead,
+      grants.read,
+      folderRead,
+      knobs.read,
+    ]),
+    extraWrite: _mergeDistinct([
+      manifestWrite,
+      grants.write,
+      folderWrite,
+      knobs.write,
+    ]),
     runtimeDirs: _runtimeDirsFor(spec.command, cwd: cwd, env: env, io: io),
     services: Set.of(services),
     warnings: List.unmodifiable(knobs.warnings),
