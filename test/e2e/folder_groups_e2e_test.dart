@@ -123,7 +123,13 @@ ${danger ? '  danger:\n    read: [~/.gnupg]\n' : ''}''');
         }
         File('$home/data/notes/note.txt').writeAsStringSync('note-content');
 
-        final plain = run(['launch', '--wait', 'codemie', '--', '/bin/true']);
+        final plain = run([
+          'launch',
+          '--wait',
+          'codemie',
+          '--',
+          '/usr/bin/true',
+        ]);
         expect(plain.exit, 0, reason: plain.stderr);
         final keyPlain = RegExp(
           r'profile ([0-9a-f]{10})',
@@ -188,7 +194,7 @@ ${danger ? '  danger:\n    read: [~/.gnupg]\n' : ''}''');
           'projy',
           'codemie',
           '--',
-          '/bin/true',
+          '/usr/bin/true',
         ]);
         expect(other.exit, 0, reason: other.stderr);
         final keyOther = RegExp(
@@ -219,7 +225,7 @@ ${danger ? '  danger:\n    read: [~/.gnupg]\n' : ''}''');
           'danger',
           'codemie',
           '--',
-          '/bin/true',
+          '/usr/bin/true',
         ]);
         expect(launch.exit, 0, reason: launch.stderr);
         expect(launch.stderr, contains('blocklisted read path'));
