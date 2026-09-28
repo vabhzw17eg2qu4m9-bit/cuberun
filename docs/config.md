@@ -8,7 +8,8 @@ dialect to drift out of sync.
 
 Source of truth: `lib/src/harness_manifest.dart` (schema), `lib/src/paths.dart`
 (path sanitation), `lib/src/resolver.dart` (precedence), `lib/src/runtime.dart`
-(grant resolution), `lib/src/service_grants.dart` (`--use-*` catalog).
+(grant resolution), `lib/src/service_grants.dart` (`--use-*` catalog),
+`lib/src/folder_groups.dart` (`--folders` groups file + selection).
 
 ## File locations & resolution precedence
 
@@ -34,6 +35,10 @@ Notes:
   silent precedence. `--yaml -` with empty stdin is likewise a config
   error, and parse errors on inline text name the source
   `<inline yaml>` (no filename exists to point at).
+- Precedence chooses WHICH manifest resolves; `--folders` LAYERS extra
+  grants over whichever profile resolved (issue #101). The two are
+  orthogonal — `--folders` composes with `--file` / `--yaml`, never
+  conflicts.
 - A total miss fails loudly, listing every location searched and the
   preset ids:
   `profile 'x' not found — looked: --file (none), <cwd>/.cube-sandbox/x.yaml, ~/.cube-sandbox/x.yaml, presets(fa, omp, pi)`.
@@ -47,7 +52,8 @@ Notes:
 
 `cube-sandbox launch [options] <profile> [args…] [-- <command…>]` — the
 positional split is the contract. Every cube-sandbox option (`--file`,
-`--yaml`, `--use-*`, `--wait`, `--spawn-exit`) MUST precede the profile; **everything
+`--yaml`, `--use-*`, `--folders`, `--wait`, `--spawn-exit`) MUST precede
+the profile; **everything
 after the profile is the harness's argv**, forwarded verbatim (order
 preserved, no interpretation — `launch omp --resume <id>` resumes). A
 `--file x` typed after the profile is the HARNESS's argument, not
@@ -169,8 +175,8 @@ facts at launch:
   `/home`, `/net` (both macOS spellings) outside the grants above;
   path *metadata* stays allowed so `realpath` works, *data* reads do
   not. All writes outside rw. **Network open** (deliberate, Layer 0).
-- Grants merge **manifest → `--use-*` services → env knobs**, first
-  occurrence wins (dedup).
+- Grants merge **manifest → `--use-*` services → folder groups
+  (`--folders`) → env knobs**, first occurrence wins (dedup).
 - Deterministic: same (manifest, machine facts, `--use-*` set) ⇒
   byte-identical profile text and the same `key10` content id; any
   grant change ⇒ different `key10`.
@@ -184,7 +190,8 @@ rewritten (mtime-stable). Invalidation is source-driven and unskippable:
 
 - **Any change to the resolved configuration** — every manifest field
   (`command`, `agentRoot`, `agentRootEnv` override, `widenToDotParent`,
-  `extraRead`, `extraWrite`), any `--use-*` service flag, the
+  `extraRead`, `extraWrite`), any `--use-*` service flag, the selected
+  `--folders` groups (a different selection or an edited entry), the
   `CUBE_SANDBOX_EXTRA_READ`/`_WRITE` env knobs, even a moved `$TMPDIR` —
   changes the emitted text ⇒ **new key10 ⇒ the next launch stages and runs
   the fresh profile**. No launch ever runs a profile that predates its
@@ -240,6 +247,53 @@ changes the output.
   `~/.ssh` is ungrantable (below), so the failure is a loud auth error,
   never a silent grant.
 
+## Folder groups (`--folders`)
+
+ONE user-level file of NAMED read/write folder-grant groups,
+`~/.cube-sandbox/folders.yaml`, selected per run via
+`--folders <group[,group...]>` on `launch` / `show` / `sbpl` / `probe`.
+The flag is REPEATABLE and comma lists accumulate; selections union per
+direction. The file is never read without the flag — file presence
+alone grants nothing.
+
+```yaml
+# ~/.cube-sandbox/folders.yaml
+apiVersion: cube-sandbox/v1     # required, exactly "cube-sandbox/v1"
+groups:                         # required map (may be empty)
+  projectA:
+    write: [~/work/projectA]    # optional list; absolute or ~/ paths
+  projectB:
+    write: [~/work/projectB, /Volumes/data/projB]
+    read: [~/Library/Caches/big-model]
+```
+
+| key | rules |
+| --- | --- |
+| `apiVersion` | exactly `cube-sandbox/v1` |
+| `groups` | map of group name → `{read:, write:}`; absent/empty = valid no-op |
+| group name | `[a-z0-9][a-z0-9-]*` (mirrors the preset-name discipline) |
+| `read:` / `write:` | optional lists of rooted or `~/` path strings; sanitized like `extraRead` (no `..`, no quotes/newlines, no trailing `/`), `~` expanded against home |
+
+Strict parsing, manifest discipline: unknown key at ANY level, wrong
+type, bad group name, or manifest-only keys (`command`, `agentRoot`, …)
+in the groups file → `ConfigException` naming the file and the YAML
+path (exit 2). Token shape errors are usage errors (exit 64): an empty
+element, trailing comma or whitespace in a name. A well-shaped but
+unknown group is a config error naming the group AND the file; the flag
+with a missing file names the path.
+
+Semantics: additive-only — the deny skeleton is byte-identical with and
+without a selection. Grants merge manifest → `--use-*` services →
+folder groups → env knobs, first occurrence wins. The `.src` provenance
+stamp records the selected group names + resolved entries, so a changed
+selection (or a renamed group with identical entries) is loud.
+
+```sh
+cube-sandbox show --folders projectB pi    # dry-run: the banner shows the widened grants
+cube-sandbox sbpl --folders projectB pi    # exact widened profile text
+cube-sandbox launch --folders projectA,projectB pi
+```
+
 ## Env knobs
 
 Colon-separated path lists, `~` expanded, empty entries dropped:
@@ -254,14 +308,16 @@ Colon-separated path lists, `~` expanded, empty entries dropped:
 
 **Ungrantable roots (E10):** `~/.ssh`, `~/.gnupg`,
 `~/Library/Keychains` (+ their `/private` spellings) — no manifest
-path, service grant or `CUBE_SANDBOX_EXTRA_WRITE` may ever touch them:
+path, service grant, `--folders` group or `CUBE_SANDBOX_EXTRA_WRITE`
+may ever touch them:
 
-- manifest/`agentRoot` violation → `ungrantable path(s) from manifest "name": …` (exit 2, launch refused)
-- `CUBE_SANDBOX_EXTRA_WRITE` violation → hard error, launch refused (exit 2)
-- `CUBE_SANDBOX_EXTRA_READ` violation → the single operator escape hatch:
-  honored, but never silent — a loud `⚠ CUBE_SANDBOX_EXTRA_READ carries
-  blocklisted path … operator override honored, NEVER silent (E10)`
-  banner prints on every launch
+| source | write-direction violation | read-direction violation |
+| --- | --- | --- |
+| manifest paths / `agentRoot` | `ungrantable path(s) from manifest "name": …` (exit 2, launch refused) | same (direction-agnostic) |
+| `--use-*` service catalog | impossible with the shipped catalog (regression → exit 2) | same |
+| `--folders` group | `--folders carries ungrantable write path(s) …` (exit 2, launch refused) | honored + loud `⚠ --folders carries blocklisted read path …` banner, every launch |
+| `CUBE_SANDBOX_EXTRA_WRITE` | hard error, launch refused (exit 2) | n/a |
+| `CUBE_SANDBOX_EXTRA_READ` | n/a | the operator escape hatch: honored, but never silent — a loud `⚠ CUBE_SANDBOX_EXTRA_READ carries blocklisted path … operator override honored, NEVER silent (E10)` banner prints on every launch |
 
 ## Scaffold & validation workflow
 

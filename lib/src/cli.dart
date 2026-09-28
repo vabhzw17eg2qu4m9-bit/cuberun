@@ -11,8 +11,10 @@ import 'dart:io' as io;
 import 'exceptions.dart';
 import 'banner.dart';
 import 'cache_policy.dart';
+import 'folder_groups.dart';
 import 'launch_argv.dart';
 import 'launcher.dart';
+import 'paths.dart';
 import 'preflight.dart';
 import 'probe.dart';
 import 'resolver.dart';
@@ -41,18 +43,23 @@ Usage:
       terminal (the two are mutually exclusive). The harness always
       gets the caller's stdio, the foreground pgrp and no detach —
       identical spawn flags on every launch path (fresh build, cache
-      hit, rebuild). Options (--file/--yaml/--use-*) precede the
-      profile; everything AFTER it is the harness's argv, forwarded
+      hit, rebuild). Options (--file/--yaml/--use-*/--folders) precede
+      the profile; everything AFTER it is the harness's argv, forwarded
       verbatim (order preserved) and never affects the staged profile
       key. Service grants: --use-github, --use-gitlab, --use-nvm.
+      Folder groups: --folders <group[,group...]> widens this run with
+      named groups from ~/.cube-sandbox/folders.yaml (repeatable,
+      accumulates; unknown group or missing file is a config error).
       --yaml passes the manifest inline ('-' reads stdin); --yaml +
       --file together is an error. `-- <command…>` overrides the
       harness command.
   cube-sandbox list
       Enumerate profiles: presets + project .cube-sandbox/ + user ~/.cube-sandbox/.
   cube-sandbox show <profile> [--file <f> | --yaml <text|->] [--use-<service>]...
+      [--folders <group,...>]
       Show resolved grants (rw / ro / denied banner).
   cube-sandbox sbpl <profile> [--file <f> | --yaml <text|->] [--use-<service>]...
+      [--folders <group,...>]
       Print the exact deterministic kernel profile text.
   cube-sandbox new <name> --command <cmd> --agent-root <path>
       Scaffold .cube-sandbox/<name>.yaml (strict round-trip verified).
@@ -62,7 +69,15 @@ Usage:
       sessions: different --use-* sets legitimately keep several keys
       live at once; the next launch re-stages whatever it needs.
   cube-sandbox probe <profile> [--file <f> | --yaml <text|->] [--use-<service>]...
+      [--folders <group,...>]
       Self-check confinement FROM INSIDE the profile; exit 0/1.
+
+Folder groups:
+  --folders <group[,group...]>   layer named read/write folder-grant
+                       groups from ~/.cube-sandbox/folders.yaml over
+                       this run's profile (launch/show/sbpl/probe;
+                       repeatable, accumulates; the file is never read
+                       without the flag)
 
 Env knobs:
   CUBE_SANDBOX_EXTRA_READ   colon-separated read-only grants (~ ok)
@@ -121,6 +136,9 @@ Future<int> runCli(
   } on ConfigException catch (e) {
     err('cube-sandbox: $e');
     return 2;
+  } on UsageException catch (e) {
+    err('cube-sandbox: $e');
+    return 64;
   } on io.FileSystemException catch (e) {
     err('cube-sandbox: filesystem error: ${e.message} (${e.path ?? ''})');
     return 2;
@@ -137,6 +155,7 @@ final class _Opts {
     this.file,
     this.yaml,
     this.services,
+    this.folders,
     this.command,
     this.flags,
   );
@@ -147,6 +166,9 @@ final class _Opts {
   /// `--yaml` value: manifest TEXT, or `-` (read stdin to EOF).
   String? yaml;
   Set<String> services = <String>{};
+
+  /// `--folders` value tokens (raw, comma lists; occurrences accumulate).
+  List<String> folders;
   List<String> command; // after `--` (empty = profile default)
   Map<String, String> flags; // --flag value / --bool
 }
@@ -165,6 +187,7 @@ _Opts _scanOpts(
   String? file;
   String? yaml;
   final services = <String>{};
+  final folders = <String>[];
   var command = <String>[];
   var i = 0;
   for (; i < args.length; i++) {
@@ -193,6 +216,14 @@ _Opts _scanOpts(
       yaml = args[++i];
       continue;
     }
+    if (a == '--folders') {
+      // Repeatable, accumulates (issue #101): never last-wins.
+      if (i + 1 >= args.length) {
+        throw const ConfigException('--folders: requires a group argument');
+      }
+      folders.add(args[++i]);
+      continue;
+    }
     if (a.startsWith('--') && boolFlags.contains(a.substring(2))) {
       flags[a.substring(2)] = ''; // boolean flag: presence marker
       continue;
@@ -209,7 +240,7 @@ _Opts _scanOpts(
     }
     positional.add(a);
   }
-  return _Opts(positional, file, yaml, services, command, flags);
+  return _Opts(positional, file, yaml, services, folders, command, flags);
 }
 
 Future<
@@ -217,6 +248,7 @@ Future<
     ResolvedHarness resolved,
     HarnessRuntime runtime,
     List<String> cacheWarnings,
+    String? folderStamp,
   })
 >
 _resolveForRun(_Opts opts, String verb) async {
@@ -233,12 +265,30 @@ _resolveForRun(_Opts opts, String verb) async {
     cwd: cwd,
     home: home,
   ).resolve(opts.positional.first, file: opts.file, yaml: yaml);
+
+  // Folder groups (issue #101): selected per run, layered over whichever
+  // profile resolved. Flag unused => the file is NEVER read.
+  final selection = parseFolderSelection(opts.folders);
+  SelectedFolderGroups? folders;
+  if (selection.isNotEmpty) {
+    final doc = loadFolderGroups(home: home);
+    if (doc == null) {
+      throw ConfigException(
+        '--folders: groups file not found: '
+        '${expandTilde(kFolderGroupsPath, home)}',
+      );
+    }
+    folders = resolveFolderGroups(doc, selection, home: home);
+  }
   final runtime = resolveRuntime(
     resolved.spec,
     services: opts.services,
     cwd: cwd,
     home: home,
-  );
+    folderRead: folders?.read ?? const [],
+    folderWrite: folders?.write ?? const [],
+    // withGrants is the extension seam: the layer's loudness rides along.
+  ).withGrants(warnings: folders?.warnings ?? const []);
   // Issue #69 loudness: a DIFFERING same-stem copy in another chain
   // location is named — an edited manifest can never be silently ignored.
   final cacheWarnings = shadowWarnings(
@@ -246,7 +296,12 @@ _resolveForRun(_Opts opts, String verb) async {
     projectDir: '$cwd/.cube-sandbox',
     userDir: '$home/.cube-sandbox',
   );
-  return (resolved: resolved, runtime: runtime, cacheWarnings: cacheWarnings);
+  return (
+    resolved: resolved,
+    runtime: runtime,
+    cacheWarnings: cacheWarnings,
+    folderStamp: folders == null ? null : folderGroupsStamp(folders.groups),
+  );
 }
 
 void _printWarnings(HarnessRuntime rt, void Function(String) err) {
@@ -296,6 +351,7 @@ Future<int> _cmdLaunch(List<String> args, void Function(String) err) async {
     cacheDir: projectCacheDir(runtime.projDir),
     profile: profile,
     resolved: resolved,
+    folderStamp: r.folderStamp,
   );
   if (previous != null) {
     // Issue #69: same key10, changed source — the cache was re-tied.
@@ -431,6 +487,7 @@ Future<int> _cmdProbe(
     cacheDir: projectCacheDir(runtime.projDir),
     profile: profile,
     resolved: r.resolved,
+    folderStamp: r.folderStamp,
   );
   if (previous != null) {
     // Issue #69: same warning contract as launch — the probe re-tied the

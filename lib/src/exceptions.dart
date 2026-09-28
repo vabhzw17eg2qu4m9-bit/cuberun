@@ -16,3 +16,16 @@ final class ConfigException implements Exception {
   @override
   String toString() => 'ConfigException: $message';
 }
+
+/// An argv-shape violation: the caller typed something malformed (not a
+/// config-file problem). Printed to stderr, exit 64 (the usage floor).
+final class UsageException implements Exception {
+  /// Creates a usage error naming the offending token.
+  const UsageException(this.message);
+
+  /// Human-readable diagnostic (printed to stderr, exit 64).
+  final String message;
+
+  @override
+  String toString() => 'UsageException: $message';
+}

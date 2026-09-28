@@ -12,6 +12,30 @@ void main() {
       expect(s.tail, isEmpty);
     });
 
+    test(
+      'AC3 (#101): --folders consumes its value; profile stays the profile',
+      () {
+        final s = splitLaunchArgv(['--folders', 'projectb', 'pi']);
+        expect(s.args, ['--folders', 'projectb', 'pi']);
+        expect(s.tail, isEmpty);
+      },
+    );
+
+    test(
+      'AC3/E13 (#101): post-profile --folders belongs to the harness tail',
+      () {
+        final s = splitLaunchArgv(['pi', '--folders', 'projectb']);
+        expect(s.args, ['pi']);
+        expect(s.tail, ['--folders', 'projectb']);
+      },
+    );
+
+    test('AC3 (#101): --folders composes with --file before the profile', () {
+      final s = splitLaunchArgv(['--folders', 'a,b', '--file', 'f.yaml', 'pi']);
+      expect(s.args, ['--folders', 'a,b', '--file', 'f.yaml', 'pi']);
+      expect(s.tail, isEmpty);
+    });
+
     test('flags after the profile are the harness tail (AC1/AC2)', () {
       final s = splitLaunchArgv(['omp', '--resume', 'u1']);
       expect(s.args, ['omp']);

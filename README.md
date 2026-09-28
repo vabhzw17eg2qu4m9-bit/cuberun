@@ -35,8 +35,8 @@ cube-sandbox clean                      # wipe <cwd>/.cube-sandbox/cache (run be
 ## Confinement model (Layer 0)
 
 - **Writes deny-by-default** — allowed only for: the project dir, the
-  harness state root, `realpath($TMPDIR)`, `CUBE_SANDBOX_EXTRA_WRITE` grants,
-  `/dev/null`, `/dev/fd`.
+  harness state root, `realpath($TMPDIR)`, `CUBE_SANDBOX_EXTRA_WRITE`
+  and folder groups (`--folders`) write grants, `/dev/null`, `/dev/fd`.
 - **Reads of user data denied** — curated deny roots (`/Users`,
   `/private/var`, `/Volumes`, `/Network`, `/home`, `/net`, BOTH macOS
   spellings) with metadata re-allows so path resolution lives; system
@@ -114,7 +114,8 @@ be picked when the source that produced it changed.
 **What the key sees (rebuilds) vs never sees (no rebuild):** key10 is a
 pure function of the emitted profile — the manifest spec fields, the
 `--use-*` service flags, the `CUBE_SANDBOX_EXTRA_READ` / `_WRITE` env
-knobs, and `realpath($TMPDIR)`. Per-launch volatile argv — `--session`
+knobs, the selected folder groups (names + their resolved entries), and
+`realpath($TMPDIR)`. Per-launch volatile argv — `--session`
 uuids, `-e` extension args, anything after the profile name — rides the
 harness's argv verbatim and **never changes the key**: identical config +
 different session id ⇒ same `key10`, no rewrite, no warning.
@@ -153,8 +154,9 @@ Services GRANT FOLDERS; they never forbid commands — a confined `gh` or
 Unknown `--use-x` fails closed listing the catalog. **Never grantable**:
 `~/.ssh`, `~/.gnupg`, `~/Library/Keychains` — rejected from every
 declarative source (impossible-by-construction, asserted by REG
-byte-scans). The single operator escape hatch is the human-typed
-`CUBE_SANDBOX_EXTRA_READ` env knob: honored, never silent (loud ⚠ banner).
+byte-scans). The operator escape hatches are the human-typed
+`CUBE_SANDBOX_EXTRA_READ` env knob and a blocklisted folder-group
+`read:` — both honored, never silent (loud ⚠ banner).
 
 **Git remotes under confinement**: **https** remotes work for public
 repos as-is; **private** https remotes need `--use-github` so the gh
@@ -163,6 +165,43 @@ with the remote's auth error (the desired failure mode, E11). **ssh**
 remotes deliberately fail: `~/.ssh` is ungrantable (E10 — key material
 stays out of every profile by construction), so a confined
 `git@github.com:…` remote is a loud auth failure, never a silent grant.
+
+## Folder groups (`--folders`)
+
+One user-level file of NAMED read/write folder-grant groups; each run
+explicitly selects the groups it needs. The master manifest is never
+edited, grants stay additive-only, and the file is never read without
+the flag:
+
+```yaml
+# ~/.cube-sandbox/folders.yaml
+apiVersion: cube-sandbox/v1
+groups:
+  projectA:
+    write: [~/work/projectA]
+  projectB:
+    write: [~/work/projectB, /Volumes/data/projB]
+    read: [~/Library/Caches/big-model]
+```
+
+```sh
+cube-sandbox launch --use-github --folders projectB pi   # one group
+cube-sandbox launch --folders projectA,projectB pi       # many groups, unioned
+cube-sandbox show --folders projectB pi                  # dry-run: banner shows the widened grants
+```
+
+The schema is strict (unknown key, bad group name, unsafe path ⇒ exit 2
+naming file + YAML path); group names match `[a-z0-9][a-z0-9-]*`; each
+group carries optional `read:` / `write:` lists of absolute or
+`~/`-rooted paths. The flag is repeatable and comma lists accumulate;
+selections union per direction and merge into the profile
+manifest → `--use-*` services → folder groups → env knobs (first
+occurrence wins). Any selected entry changes the emitted text ⇒ new
+`key10` ⇒ the next launch rebuilds (and the `.src` provenance stamp
+names the selected groups). Blocklist per direction: a `write:` touching
+`~/.ssh` / `~/.gnupg` / `~/Library/Keychains` is rejected (exit 2); a
+`read:` hit is honored, never silent — a loud ⚠ banner warning prints on
+every launch. Available on `launch` / `show` / `sbpl` / `probe`.
 
 ## Env knobs
 

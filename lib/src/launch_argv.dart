@@ -17,8 +17,9 @@ LaunchSplit splitLaunchArgv(List<String> args) {
   for (var i = 0; i < args.length; i++) {
     final a = args[i];
     if (a == '--') return (args: args, tail: const <String>[]);
-    // --file/--yaml consume a value token; any other flag stands alone.
-    if (a == '--file' || a == '--yaml') i++;
+    // --file/--yaml/--folders consume a value token; any other flag
+    // stands alone.
+    if (a == '--file' || a == '--yaml' || a == '--folders') i++;
     if (a.startsWith('--')) continue;
     final tail = args.sublist(i + 1);
     final dd = tail.indexOf('--');
