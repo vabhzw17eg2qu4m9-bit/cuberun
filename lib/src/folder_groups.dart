@@ -83,28 +83,8 @@ FolderGroupsDoc parseFolderGroups(
   required String path,
   required String home,
 }) {
-  final Object? doc;
-  try {
-    doc = loadYaml(text);
-  } on YamlException catch (e) {
-    throw ConfigException('$path: invalid yaml: ${e.message}');
-  }
-  if (doc == null) {
-    throw ConfigException(
-      '$path: empty document (apiVersion: cube-sandbox/v1 required)',
-    );
-  }
-  if (doc is! YamlMap) {
-    throw ConfigException('$path: must be a map, got ${doc.runtimeType}');
-  }
-  for (final key in doc.keys) {
-    if (key is! String || (key != 'apiVersion' && key != 'groups')) {
-      throw ConfigException(
-        '$path.${key is String ? key : key.runtimeType}: unknown key '
-        '(allowed: [apiVersion, groups])',
-      );
-    }
-  }
+  final doc = _loadDocument(text, path);
+  _checkTopKeys(doc, path);
   if (doc['apiVersion'] != 'cube-sandbox/v1') {
     throw ConfigException(
       '$path: apiVersion: must be "cube-sandbox/v1", '
@@ -125,51 +105,100 @@ FolderGroupsDoc parseFolderGroups(
     final name = entry.key;
     if (name is! String || !_groupName.hasMatch(name)) {
       throw ConfigException(
-        '$path: groups.${name is String ? name : renderValue(name)}: '
+        '$path: groups.${_keyName(name)}: '
         'group name must match [a-z0-9][a-z0-9-]*',
       );
     }
-    final body = entry.value;
-    if (body is! YamlMap) {
-      throw ConfigException(
-        '$path: groups.$name: must be a map with optional read:/write:, '
-        'got ${body.runtimeType}',
-      );
-    }
-    for (final key in body.keys) {
-      if (key is! String || (key != 'read' && key != 'write')) {
-        throw ConfigException(
-          '$path: groups.$name.${key is String ? key : key.runtimeType}: '
-          'unknown key (allowed: [read, write])',
-        );
-      }
-    }
-
-    List<String> parseDir(String dir) {
-      final node = body[dir];
-      if (node == null) return const [];
-      if (node is! YamlList) {
-        throw ConfigException(
-          '$path: groups.$name.$dir: must be a list of paths, '
-          'got ${node.runtimeType}',
-        );
-      }
-      return [
-        for (var i = 0; i < node.length; i++)
-          expandTilde(
-            sanitizeManifestPath(node[i], '$path.groups.$name.$dir[$i]'),
-            home,
-          ),
-      ];
-    }
-
-    groups[name] = FolderGroup(
-      name: name,
-      read: parseDir('read'),
-      write: parseDir('write'),
-    );
+    groups[name] = _parseGroup(name, entry.value, path: path, home: home);
   }
   return FolderGroupsDoc(groups);
+}
+
+/// Renders an error-message key: names strings, types anything else.
+String _keyName(Object? key) => key is String ? key : '${key.runtimeType}';
+
+/// Loads + shape-checks the document root: valid yaml, non-empty, a map.
+YamlMap _loadDocument(String text, String path) {
+  final Object? doc;
+  try {
+    doc = loadYaml(text);
+  } on YamlException catch (e) {
+    throw ConfigException('$path: invalid yaml: ${e.message}');
+  }
+  if (doc == null) {
+    throw ConfigException(
+      '$path: empty document (apiVersion: cube-sandbox/v1 required)',
+    );
+  }
+  if (doc is! YamlMap) {
+    throw ConfigException('$path: must be a map, got ${doc.runtimeType}');
+  }
+  return doc;
+}
+
+/// Top level allows only apiVersion + groups, at ANY position.
+void _checkTopKeys(YamlMap doc, String path) {
+  for (final key in doc.keys) {
+    if (key is! String || (key != 'apiVersion' && key != 'groups')) {
+      throw ConfigException(
+        '$path.${_keyName(key)}: unknown key '
+        '(allowed: [apiVersion, groups])',
+      );
+    }
+  }
+}
+
+/// Parses one group body: map with optional read:/write: keys only.
+FolderGroup _parseGroup(
+  String name,
+  Object? body, {
+  required String path,
+  required String home,
+}) {
+  if (body is! YamlMap) {
+    throw ConfigException(
+      '$path: groups.$name: must be a map with optional read:/write:, '
+      'got ${body.runtimeType}',
+    );
+  }
+  for (final key in body.keys) {
+    if (key is! String || (key != 'read' && key != 'write')) {
+      throw ConfigException(
+        '$path: groups.$name.${_keyName(key)}: '
+        'unknown key (allowed: [read, write])',
+      );
+    }
+  }
+  return FolderGroup(
+    name: name,
+    read: _parseDir(body, 'read', name, path: path, home: home),
+    write: _parseDir(body, 'write', name, path: path, home: home),
+  );
+}
+
+/// Parses one direction: optional list of sanitized, tilde-expanded paths.
+List<String> _parseDir(
+  YamlMap body,
+  String dir,
+  String name, {
+  required String path,
+  required String home,
+}) {
+  final node = body[dir];
+  if (node == null) return const [];
+  if (node is! YamlList) {
+    throw ConfigException(
+      '$path: groups.$name.$dir: must be a list of paths, '
+      'got ${node.runtimeType}',
+    );
+  }
+  return [
+    for (var i = 0; i < node.length; i++)
+      expandTilde(
+        sanitizeManifestPath(node[i], '$path.groups.$name.$dir[$i]'),
+        home,
+      ),
+  ];
 }
 
 /// Loads + parses [kFolderGroupsPath] under [home]. Returns null when the
