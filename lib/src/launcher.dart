@@ -1,6 +1,6 @@
 /// Launcher: `sandbox-exec -f <profile> <command…>` in one of three
 /// shapes (issue #113): `exec` — cube-sandbox replaces its own image via
-/// execve(2), so ZERO launcher processes stay resident: the harness IS
+/// execvp(2), so ZERO launcher processes stay resident: the harness IS
 /// the shell's foreground job and its exit code / signal deaths surface
 /// natively; `spawnExit` — #53 headless spawn-and-exit: exit 0 once the
 /// confined child is running (the harness outlives us; the kernel keeps
@@ -63,7 +63,8 @@ String spawnLogLine({
 });
 
 /// Runs the confined child with inherited stdio; NEVER throws. `exec`
-/// replaces this image with the backend (execve, #113) — the call only
+/// replaces this image with the backend (execvp — PATH-searched like the
+/// spawn shapes, #113) — the call only
 /// returns (126) when the image could not be replaced: fail-closed,
 /// nothing ran. `spawnExit` returns the SPAWN status: 0 on successful
 /// spawn (the child's own exit is neither observed nor waited on), 126
@@ -87,7 +88,7 @@ Future<int> launchConfined({
     await io.stderr.flush();
     _logSpawn(spawnLogPath, backend, profilePath, command, false);
     final errno = _execBackend(backend, profilePath, command);
-    // execve returned => the image was never replaced; nothing ran.
+    // execvp returned => the image was never replaced; nothing ran.
     onFailClosed?.call('exec failed: $errno (fail closed; nothing ran)');
     return 126;
   }
@@ -121,27 +122,21 @@ Future<int> launchConfined({
   }
 }
 
-/// execve(2) the backend in THIS process (issue #113):
-/// `sandbox-exec -f <profile> <command…>`, environment untouched via the
-/// real `environ`. Returns the errno if — and only if — the exec failed;
+/// execvp(2) the backend in THIS process (issue #113):
+/// `sandbox-exec -f <profile> <command…>`. execvp PATH-searches the bare
+/// backend name exactly like the spawn shapes' `Process.start`, and
+/// passes the caller's own environ untouched (POSIX: execvp == execve
+/// with environ). Returns the errno if — and only if — the exec failed;
 /// on success it NEVER returns.
 int _execBackend(String backend, String profilePath, List<String> command) {
   final dylib = ffi.DynamicLibrary.process();
-  final execve = dylib
+  final execvp = dylib
       .lookupFunction<
-        ffi.Int32 Function(
-          ffi.Pointer<Utf8>,
-          ffi.Pointer<ffi.Pointer<Utf8>>,
-          ffi.Pointer<ffi.Pointer<Utf8>>,
-        ),
-        int Function(
-          ffi.Pointer<Utf8>,
-          ffi.Pointer<ffi.Pointer<Utf8>>,
-          ffi.Pointer<ffi.Pointer<Utf8>>,
-        )
-      >('execve');
+        ffi.Int32 Function(ffi.Pointer<Utf8>, ffi.Pointer<ffi.Pointer<Utf8>>),
+        int Function(ffi.Pointer<Utf8>, ffi.Pointer<ffi.Pointer<Utf8>>)
+      >('execvp');
 
-  // argv[0] is the image's own name by execve convention; the test seam
+  // argv[0] is the image's own name by exec convention; the test seam
   // may point [backend] at an arbitrary path while argv[0] stays the
   // production name — mirroring Process.start's argv, minus the path.
   final args = ['sandbox-exec', '-f', profilePath, ...command];
@@ -154,12 +149,9 @@ int _execBackend(String backend, String profilePath, List<String> command) {
   }
   argv[args.length] = ffi.nullptr;
 
-  final nativeEnv = _nativeEnviron(dylib);
-  final builtEnv = nativeEnv == null ? _environFromPlatform() : null;
-  final envp = nativeEnv?.value ?? builtEnv!.ptr;
   final exePath = backend.toNativeUtf8();
-  execve(exePath, argv, envp);
-  // Only a failed exec ever reaches this line (execve returns -1; the
+  execvp(exePath, argv);
+  // Only a failed exec ever reaches this line (execvp returns -1; the
   // reason is in errno) — free what we built, then fail closed.
   final errno = _errno(dylib);
   malloc.free(exePath);
@@ -167,45 +159,7 @@ int _execBackend(String backend, String profilePath, List<String> command) {
     malloc.free(s);
   }
   calloc.free(argv);
-  if (builtEnv != null) _freeEnviron(builtEnv);
   return errno;
-}
-
-/// The real `environ` (char **), shared with libc: try both spellings.
-/// Null when neither symbol exists — [_execBackend] then rebuilds the
-/// environment from `Platform.environment` (same content, fresh memory).
-ffi.Pointer<ffi.Pointer<ffi.Pointer<Utf8>>>? _nativeEnviron(
-  ffi.DynamicLibrary dylib,
-) {
-  for (final name in const ['environ', '_environ']) {
-    try {
-      return dylib.lookup<ffi.Pointer<ffi.Pointer<Utf8>>>(name);
-    } on ArgumentError {
-      // symbol absent on this platform — try the next spelling
-    }
-  }
-  return null;
-}
-
-/// Null-terminated environment rebuilt from [io.Platform.environment];
-/// [EnvironBlock.count] entries plus the terminating null are ours to
-/// free. Fallback for platforms without an `environ` symbol.
-({ffi.Pointer<ffi.Pointer<Utf8>> ptr, int count}) _environFromPlatform() {
-  final env = io.Platform.environment;
-  final keys = env.keys.toList(growable: false);
-  final ptr = calloc<ffi.Pointer<Utf8>>(keys.length + 1);
-  for (var i = 0; i < keys.length; i++) {
-    ptr[i] = '${keys[i]}=${env[keys[i]]}'.toNativeUtf8();
-  }
-  ptr[keys.length] = ffi.nullptr;
-  return (ptr: ptr, count: keys.length);
-}
-
-void _freeEnviron(({ffi.Pointer<ffi.Pointer<Utf8>> ptr, int count}) env) {
-  for (var i = 0; i < env.count; i++) {
-    malloc.free(env.ptr[i]);
-  }
-  calloc.free(env.ptr);
 }
 
 /// macOS errno facility: `__error()` returns a pointer to the per-thread

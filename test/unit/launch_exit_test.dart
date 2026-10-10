@@ -10,7 +10,7 @@ import 'package:test/test.dart';
 /// ran unconfined). The `wait` shape keeps the blocking contract: child
 /// code verbatim, signal n => 128+n (the `mapChildExit` mapping itself is
 /// covered by exit_map_test.dart). The `exec` shape fails closed 126 when
-/// execve cannot replace the image; its success path replaces THIS
+/// execvp cannot replace the image; its success path replaces THIS
 /// process, so it is pinned by the pty E2E suite, never by a unit test.
 /// Drives the real `launchConfined` through the backend seam — no
 /// sandbox-exec needed, runs on any host.
@@ -60,7 +60,7 @@ void main() {
   test(
     'exec shape: unusable backend fails closed 126, nothing spawned',
     () async {
-      // #113 — the exec path never Process.start()s: execve either replaces
+      // #113 — the exec path never Process.start()s: execvp either replaces
       // this image (E2E-pinned, impossible to unit-test in-process) or
       // fails with the image untouched. An ENOENT backend exercises the
       // failure arm: 126, the exec-specific diagnostic, and no child ever
@@ -70,6 +70,27 @@ void main() {
         profilePath: '/dev/null',
         command: const ['true'],
         backend: '${tmp.path}/no-such-backend',
+        shape: LaunchShape.exec,
+        onFailClosed: diag.add,
+      );
+      expect(code, 126);
+      expect(diag.single, contains('exec failed'));
+      expect(diag.single, contains('fail closed'));
+    },
+  );
+
+  test(
+    'exec shape: bare backend name PATH-searches like Process.start',
+    () async {
+      // #113 — the production backend is the bare name `sandbox-exec`;
+      // execvp(2) must resolve it the way Process.start resolves the spawn
+      // shapes (a bare execve would ENOENT — CI-proofed regression). An
+      // unresolvable name still fails closed 126 with the exec diagnostic.
+      final diag = <String>[];
+      final code = await launchConfined(
+        profilePath: '/dev/null',
+        command: const ['true'],
+        backend: 'cube-sandbox-no-such-backend',
         shape: LaunchShape.exec,
         onFailClosed: diag.add,
       );
