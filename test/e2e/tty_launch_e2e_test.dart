@@ -417,31 +417,29 @@ sleep "\$HOLD"
     timeout: const Timeout(Duration(minutes: 2)),
   );
 
-  kernelTest(
-    'E6/#113: exec default — SIGINT to the foreground pgrp surfaces the '
-    'harness death (130) natively',
-    () async {
-      final perl = '/usr/bin/perl';
-      if (!File(perl).existsSync()) {
-        fail('/usr/bin/perl missing — cannot isolate a process group');
-      }
-      // Stale files from an earlier run would short-circuit the waits —
-      // start clean (never silent if the probe never shows up).
-      final ready = '$proj/int-ready';
-      final trapped = '$proj/int-trapped';
-      final pidf = '$proj/int-pid';
-      for (final f in [ready, trapped, pidf]) {
-        final f0 = File(f);
-        if (f0.existsSync()) f0.deleteSync();
-      }
-      final intSh = writeScript(
-        'int',
-        "trap 'printf int > \"\$TRAPPED\"; exit 130' INT\n"
-            'printf ready > "\$MARK"\n'
-            'printf \'%s\\n\' "\$\$" > "\$PIDF"\n'
-            'sleep 30\n',
-      );
-      File('$proj/.cube-sandbox/tty4.yaml').writeAsStringSync('''
+  kernelTest('E6/#113: exec default — SIGINT to the foreground pgrp surfaces the '
+      'harness death (130) natively', () async {
+    final perl = '/usr/bin/perl';
+    if (!File(perl).existsSync()) {
+      fail('/usr/bin/perl missing — cannot isolate a process group');
+    }
+    // Stale files from an earlier run would short-circuit the waits —
+    // start clean (never silent if the probe never shows up).
+    final ready = '$proj/int-ready';
+    final trapped = '$proj/int-trapped';
+    final pidf = '$proj/int-pid';
+    for (final f in [ready, trapped, pidf]) {
+      final f0 = File(f);
+      if (f0.existsSync()) f0.deleteSync();
+    }
+    final intSh = writeScript(
+      'int',
+      "trap 'printf int > \"\$TRAPPED\"; exit 130' INT\n"
+          'printf ready > "\$MARK"\n'
+          'printf \'%s\\n\' "\$\$" > "\$PIDF"\n'
+          'sleep 30\n',
+    );
+    File('$proj/.cube-sandbox/tty4.yaml').writeAsStringSync('''
 apiVersion: cube-sandbox/v1
 kind: Harness
 metadata:
@@ -452,66 +450,75 @@ spec:
     - $intSh
   agentRoot: $proj
 ''');
-      // NO --wait: cube-sandbox execs away at once — there is no launcher
-      // left to watch or map signals. setpgrp(0,0) puts the whole chain
-      // (perl → cube → sandbox-exec → probe) in one group; an INT to it
-      // is the real-terminal ^C shape. The wrapper sh stays OUTSIDE the
-      // group (plain fork, no exec) so it survives to map the death the
-      // way a login shell does: signal n => 128+n. Whatever the kernel
-      // hands it — sandbox-exec killed by INT, or its trap-driven 130 —
-      // the shell reports 130.
-      final inner = [
-        perl,
-        '-e',
-        'setpgrp(0, 0); exec @ARGV',
-        '--',
-        h.ensureBinary(),
-        'launch',
-        'tty4',
-      ].map((a) => "'${a.replaceAll("'", r"'\''")}'").join(' ');
-      final p = await Process.start(
-        '/bin/sh',
-        ['-c', inner],
-        workingDirectory: proj,
-        environment: env({'MARK': ready, 'TRAPPED': trapped, 'PIDF': pidf}),
-      );
-      // The probe publishes its own pid (the same self-reporting contract
-      // as the pty probes — ps under the profile is unreliable, E2E-7);
-      // its pgid IS the leader group: setpgrp(0,0) made the whole chain
-      // one group, whatever the wrapper sh forked or execed on the way.
-      final deadline = DateTime.now().add(const Duration(seconds: 30));
-      while (!File(pidf).existsSync() && DateTime.now().isBefore(deadline)) {
-        sleep(const Duration(milliseconds: 50));
-      }
-      expect(File(pidf).existsSync(), isTrue, reason: 'harness started');
-      final probePid = File(pidf).readAsStringSync().trim();
-      expect(probePid, isNotEmpty, reason: 'probe pid published');
-      final pgid = psInt('ps -o pgid= -p $probePid');
-      final kill = Process.runSync('kill', ['-s', 'INT', '-$pgid']);
-      expect(kill.exitCode, 0, reason: kill.stderr as String);
-      expect(
-        await p.exitCode,
-        130,
-        reason:
-            '130 = the harness\'s SIGINT death surfaced NATIVELY through '
-            'the exec chain (signal n => 128+n via the shell) — nothing '
-            'intercepted or remapped it',
-      );
-      final tDeadline = DateTime.now().add(const Duration(seconds: 10));
-      while (!File(trapped).existsSync() &&
-          DateTime.now().isBefore(tDeadline)) {
-        sleep(const Duration(milliseconds: 50));
-      }
-      expect(
-        File(trapped).existsSync(),
-        isTrue,
-        reason: 'SIGINT reached the probe INSIDE the exec\'d image',
-      );
-      await p.stdout.drain<void>();
-      await p.stderr.drain<void>();
-    },
-    timeout: const Timeout(Duration(minutes: 2)),
-  );
+    // NO --wait: cube-sandbox execs away at once — there is no launcher
+    // left to watch or map signals. setpgrp(0,0) puts the whole chain
+    // (perl → cube → sandbox-exec → probe) in one group; an INT to it
+    // is the real-terminal ^C shape. The wrapper sh stays OUTSIDE the
+    // group (plain fork, no exec) so it survives to map the death the
+    // way a login shell does: signal n => 128+n. Whatever the kernel
+    // hands it — sandbox-exec killed by INT, or its trap-driven 130 —
+    // the shell reports 130.
+    final inner = [
+      perl,
+      '-e',
+      'setpgrp(0, 0); exec @ARGV',
+      '--',
+      h.ensureBinary(),
+      'launch',
+      'tty4',
+    ].map((a) => "'${a.replaceAll("'", r"'\''")}'").join(' ');
+    final p = await Process.start(
+      '/bin/sh',
+      ['-c', inner],
+      workingDirectory: proj,
+      environment: env({'MARK': ready, 'TRAPPED': trapped, 'PIDF': pidf}),
+    );
+    // The probe publishes its own pid (the same self-reporting contract
+    // as the pty probes — ps under the profile is unreliable, E2E-7);
+    // its pgid IS the leader group: setpgrp(0,0) made the whole chain
+    // one group, whatever the wrapper sh forked or execed on the way.
+    final deadline = DateTime.now().add(const Duration(seconds: 30));
+    while (!File(pidf).existsSync() && DateTime.now().isBefore(deadline)) {
+      sleep(const Duration(milliseconds: 50));
+    }
+    expect(File(pidf).existsSync(), isTrue, reason: 'harness started');
+    final probePid = File(pidf).readAsStringSync().trim();
+    expect(probePid, isNotEmpty, reason: 'probe pid published');
+    final pgid = psInt('ps -o pgid= -p $probePid');
+    final kill = Process.runSync('kill', ['-s', 'INT', '-$pgid']);
+    expect(kill.exitCode, 0, reason: kill.stderr as String);
+    // Evidence first: some layer may fork so the wrapper outlives the
+    // chain with the next command's status — capture the whole picture
+    // BEFORE asserting, so the failure message (and even a passing run)
+    // carries it into the CI log.
+    final tDeadline = DateTime.now().add(const Duration(seconds: 10));
+    while (!File(trapped).existsSync() && DateTime.now().isBefore(tDeadline)) {
+      sleep(const Duration(milliseconds: 50));
+    }
+    final code = await p.exitCode;
+    String snap(String expr) {
+      final r = Process.runSync('/bin/sh', ['-c', expr]);
+      return 'exit=${r.exitCode} out="${(r.stdout as String).trim()}" '
+          'err="${(r.stderr as String).trim()}"';
+    }
+
+    final diag = [
+      'trapped=${File(trapped).existsSync() ? File(trapped).readAsStringSync().trim() : 'MISSING'}',
+      'rawCode=$code (want 130)',
+      'probePid=$probePid pgid=$pgid wrapperPid=${p.pid}',
+      'ps(wrapper+probe): ${snap('ps -o pid,ppid,pgid,sess,stat,ucomm -p $p.pid,$probePid')}',
+      'pgrep -g $pgid: ${snap('pgrep -g $pgid')}',
+    ].join(' | ');
+    print('E6/#113 diag: $diag');
+    expect(code, 130, reason: diag);
+    expect(
+      File(trapped).existsSync(),
+      isTrue,
+      reason: 'SIGINT reached the probe INSIDE the exec\'d image',
+    );
+    await p.stdout.drain<void>();
+    await p.stderr.drain<void>();
+  }, timeout: const Timeout(Duration(minutes: 2)));
 
   kernelTest(
     'E6/#81 (--wait shape): SIGINT to the waiting launcher surfaces the '
