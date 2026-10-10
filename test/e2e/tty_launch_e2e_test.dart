@@ -425,12 +425,20 @@ sleep "\$HOLD"
       if (!File(perl).existsSync()) {
         fail('/usr/bin/perl missing — cannot isolate a process group');
       }
+      // Stale files from an earlier run would short-circuit the waits —
+      // start clean (never silent if the probe never shows up).
       final ready = '$proj/int-ready';
       final trapped = '$proj/int-trapped';
+      final pidf = '$proj/int-pid';
+      for (final f in [ready, trapped, pidf]) {
+        final f0 = File(f);
+        if (f0.existsSync()) f0.deleteSync();
+      }
       final intSh = writeScript(
         'int',
         "trap 'printf int > \"\$TRAPPED\"; exit 130' INT\n"
             'printf ready > "\$MARK"\n'
+            'printf \'%s\\n\' "\$\$" > "\$PIDF"\n'
             'sleep 30\n',
       );
       File('$proj/.cube-sandbox/tty4.yaml').writeAsStringSync('''
@@ -465,17 +473,21 @@ spec:
         '/bin/sh',
         ['-c', inner],
         workingDirectory: proj,
-        environment: env({'MARK': ready, 'TRAPPED': trapped}),
+        environment: env({'MARK': ready, 'TRAPPED': trapped, 'PIDF': pidf}),
       );
+      // The probe publishes its own pid (the same self-reporting contract
+      // as the pty probes — ps under the profile is unreliable, E2E-7);
+      // its pgid IS the leader group: setpgrp(0,0) made the whole chain
+      // one group, whatever the wrapper sh forked or execed on the way.
       final deadline = DateTime.now().add(const Duration(seconds: 30));
-      while (!File(ready).existsSync() && DateTime.now().isBefore(deadline)) {
+      while (!File(pidf).existsSync() && DateTime.now().isBefore(deadline)) {
         sleep(const Duration(milliseconds: 50));
       }
-      expect(File(ready).existsSync(), isTrue, reason: 'harness started');
-      // The group leader is the perl pid (execed into cube and beyond),
-      // NOT sh's pid — look it up rather than assuming.
-      final leader = psInt('pgrep -P ${p.pid}');
-      final kill = Process.runSync('kill', ['-s', 'INT', '-$leader']);
+      expect(File(pidf).existsSync(), isTrue, reason: 'harness started');
+      final probePid = File(pidf).readAsStringSync().trim();
+      expect(probePid, isNotEmpty, reason: 'probe pid published');
+      final pgid = psInt('ps -o pgid= -p $probePid');
+      final kill = Process.runSync('kill', ['-s', 'INT', '-$pgid']);
       expect(kill.exitCode, 0, reason: kill.stderr as String);
       expect(
         await p.exitCode,
