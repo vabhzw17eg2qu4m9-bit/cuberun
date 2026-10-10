@@ -64,7 +64,7 @@ without a tail, and `--wait` exit codes propagate unchanged. `show` /
 `sbpl` / `probe` / `new` / `list` stay strict: trailing options still
 error.
 
-### Spawn-and-exit (`--wait` to block) / terminal control (issue #81)
+### Exec (tty) / spawn-and-exit (headless) / terminal control (issues #113, #81)
 
 `launch` is spawn-and-exit for HEADLESS callers: resolve → preflight →
 stage → banner → spawn `sandbox-exec -f <sb> <command…>` → **exit 0**.
@@ -76,23 +76,27 @@ process itself, its inherited stdio fds stay open, the terminal's
 Ctrl-C reaches it directly, and the orphaned process reparents to
 launchd.
 
-**From a terminal (stdin is a tty) the default flips to
-foreground-hold**: cube-sandbox stays resident until the harness exits
-and forwards its code (signal n ⇒ `128 + n`). Exiting first would let
-the shell's job control reclaim the tty, orphaning the harness's pgrp
-in the background — where raw-mode `tcsetattr` returns EIO and TUIs
-die with `setRawMode EIO` at startup. `--wait` (before the profile)
-forces the blocking shape everywhere; `--spawn-exit` forces the legacy
-spawn-and-exit from a terminal — which hands the tty back to the
-shell's job control immediately, i.e. the v0.3.1 raw-mode hazard #81
-fixes; it is meant for headless-shape automation, not TUIs; the two
-are mutually exclusive
-(exit 2). In every mode, on every launch path (fresh build, cache hit,
-rebuild), the spawn is identical: inherited stdio, no detach, no new
-session — and the harness's SIGINT death is what surfaces, because the
-launcher ignores its own copy while waiting (headless `--wait` holds
-too: an explicit SIGINT to the launcher pid is ignored until the
-harness exits). The profile itself never
+**From a terminal (stdin is a tty) the default is exec (issue #113)**:
+`launch` replaces itself with the confined harness (`sandbox-exec →
+harness`) — **zero resident launcher processes, the harness IS the
+shell's foreground job** — and its exit code and signal deaths (n ⇒
+`128 + n` via the shell) surface natively. `--wait` (before the
+profile) keeps the blocking parent shape verbatim as the opt-in —
+spawn + wait, forwarding the harness's code (signal n ⇒ `128 + n`).
+`--spawn-exit` is accepted and selects the same shape as the default
+(tty: exec; headless: spawn-and-exit); the two flags are mutually
+exclusive (exit 2). **Automation note (vs v0.3.1):** tty-attached
+automation that needs fire-and-forget for a NON-interactive command
+should run launch with stdin redirected from /dev/null (headless
+shape); from a terminal, `--spawn-exit` now execs (works — pre-#113
+it handed the tty back to the shell's job control immediately, i.e.
+the v0.3.1 raw-mode hazard #81 fixed, and the harness died with
+`setRawMode EIO`). In every mode, on every launch path (fresh build,
+cache hit, rebuild), the spawn is identical: inherited stdio, no
+detach, no new session — and under `--wait` the harness's SIGINT
+death is what surfaces, because the launcher ignores its own copy
+while waiting (an explicit SIGINT to the launcher pid is ignored
+until the harness exits). The profile itself never
 names tty devices or denies ioctls (byte-level audit tests pin this);
 raw mode needs zero grants. `CUBE_SANDBOX_SPAWN_LOG` (below) records
 each spawn so equivalence is observable, not assumed.
@@ -330,16 +334,18 @@ cube-sandbox sbpl myagent               # exact kernel profile text — also THE
 cube-sandbox sbpl myagent --file p.yaml # validate a file without installing it
 cube-sandbox show myagent               # resolved grants: rw / ro / denied banner
 cube-sandbox probe myagent              # self-checks FROM INSIDE the profile; exit 0/1
-cube-sandbox launch myagent                # launch (profile's own command) — spawn-and-exit
-cube-sandbox launch --wait myagent         # block instead; forward the harness exit code
+cube-sandbox launch myagent                # launch (profile's own command) — tty: exec; headless: spawn-and-exit
+cube-sandbox launch --wait myagent         # spawn + wait; forward the harness exit code
 cube-sandbox launch myagent -- git status  # or any command under the same boundary
 ```
 
-Exit codes: `0` ok — for `launch`, spawn success (the confined harness
-is running and outlives the launcher) · `1` probe failure · `2` config
-error (`ConfigException` diagnostics) · `64` usage · `126` fail-closed
-(backend missing/rejecting — the command never runs unconfined) ·
-under `launch --wait`, the harness's own code (signal n ⇒ `128 + n`).
+Exit codes: `0` ok — for `launch` headless, spawn success (the confined
+harness is running and outlives the launcher; from a terminal the
+launcher has exec'd, so the harness's own code surfaces directly) ·
+`1` probe failure · `2` config error (`ConfigException` diagnostics) ·
+`64` usage · `126` fail-closed (backend missing/rejecting — the command
+never runs unconfined) · under `launch --wait`, the harness's own code
+(signal n ⇒ `128 + n`).
 
 ## Examples
 

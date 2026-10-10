@@ -1,9 +1,11 @@
 /// cube-sandbox CLI: `launch` · `list` · `show` · `sbpl` · `new` · `probe`.
 ///
-/// Exit codes: 0 ok — for launch, spawn success: the confined harness is
-/// running and outlives cube-sandbox (spawn-and-exit, #53) · 1 probe
-/// failure · 2 config error · 64 usage · 126 fail-closed backend/spawn ·
-/// under `launch --wait`: the harness's own code (signal n => 128+n).
+/// Exit codes: 0 ok — for launch: headless spawn success (the confined
+/// harness is running and outlives cube-sandbox, #53); from a tty the
+/// launcher execs into the harness (#113), so the harness's own code
+/// surfaces natively · 1 probe failure · 2 config error · 64 usage ·
+/// 126 fail-closed backend/spawn/exec ·
+/// `launch --wait`: the harness's own code (signal n => 128+n).
 library;
 
 import 'dart:io' as io;
@@ -33,20 +35,25 @@ cube-sandbox $kCubeSandboxVersion — kernel-confined launcher for AI harnesses
 Usage:
   cube-sandbox launch [options] <profile> [args…] [-- <command…>]
       Launch a command (default: the profile's own) inside the Layer-0
-      kernel profile. Terminal control (issue #81): with a tty on stdin
-      the launcher HOLDS the foreground for the harness's lifetime and
-      forwards its exit code (signal n => 128+n) — the TUI keeps raw
-      mode; headless callers keep spawn-and-exit: once the confined
-      harness is running, cube-sandbox exits 0 (the exit code is the
-      spawn status, not the harness's). --wait forces the blocking
-      shape everywhere; --spawn-exit forces spawn-and-exit from a
-      terminal (the two are mutually exclusive). The harness always
-      gets the caller's stdio, the foreground pgrp and no detach —
-      identical spawn flags on every launch path (fresh build, cache
-      hit, rebuild). Options (--file/--yaml/--use-*/--folders) precede
-      the profile; everything AFTER it is the harness's argv, forwarded
-      verbatim (order preserved) and never affects the staged profile
-      key. Service grants: --use-github, --use-gitlab, --use-nvm.
+      kernel profile. Terminal control (issue #113): with a tty on
+      stdin the launcher REPLACES ITSELF with the confined harness —
+      zero resident launcher; the harness IS the shell's foreground
+      job; its exit code and signal deaths surface natively
+      (signal n => 128+n via the shell). Headless callers keep
+      spawn-and-exit (issue #53): once the confined harness is running,
+      cube-sandbox exits 0 (the exit code is the spawn status, not the
+      harness's). --wait keeps the blocking parent shape everywhere:
+      the launcher holds the foreground for the harness's lifetime and
+      forwards its exit code (signal n => 128+n). --spawn-exit is exec
+      from a terminal / spawn-and-exit when headless — kept for CLI
+      compatibility; it can no longer leave a resident launcher. The
+      two are mutually exclusive. The harness always gets the caller's
+      stdio, the foreground pgrp and no detach — identical spawn flags
+      on every launch path (fresh build, cache hit, rebuild). Options
+      (--file/--yaml/--use-*/--folders) precede the profile;
+      everything AFTER it is the harness's argv, forwarded verbatim
+      (order preserved) and never affects the staged profile key.
+      Service grants: --use-github, --use-gitlab, --use-nvm.
       Folder groups: --folders <group[,group...]> widens this run with
       named groups from ~/.cube-sandbox/folders.yaml (repeatable,
       accumulates; unknown group or missing file is a config error).
@@ -89,9 +96,10 @@ Env knobs:
                        a launch
 
 Exit codes: 0 ok (headless launch: spawn success — the harness
-outlives us; tty launch / --wait: the harness's own code) ·
-1 probe failed · 2 config error · 64 usage ·
-126 fail-closed (backend missing/rejecting) ·
+outlives us) · 1 probe failed · 2 config error · 64 usage ·
+126 fail-closed (backend missing/rejecting/exec) ·
+tty launch: the harness's own code, surfaced natively
+(signal n => 128+n via the shell) ·
 --wait: the harness's own code (signal n => 128+n).''';
 
 /// Parses [args], runs the verb, returns the process exit code.
@@ -380,9 +388,10 @@ Future<int> _cmdLaunch(List<String> args, void Function(String) err) async {
   return launchConfined(
     profilePath: profilePath,
     command: [...command, ...split.tail],
-    // Issue #81: a tty caller holds the foreground (wait) so the TUI
-    // keeps raw mode; headless callers keep #53 spawn-and-exit.
-    wait: shouldWait(
+    // Issue #113: a tty caller execs into the harness — zero resident
+    // launcher, the harness IS the foreground job; headless callers keep
+    // #53 spawn-and-exit; --wait forces the blocking parent shape.
+    shape: launchShape(
       waitFlag: waitFlag,
       spawnExitFlag: spawnExitFlag,
       stdinHasTerminal: io.stdin.hasTerminal,

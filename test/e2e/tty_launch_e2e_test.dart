@@ -8,10 +8,16 @@ import 'package:test/test.dart';
 
 import '../helpers/e2e_helpers.dart' as h;
 
-/// Issue #81 — interactive TUI terminal control under cube-sandbox launch.
+/// Issues #113 + #81 — interactive TUI terminal control under
+/// cube-sandbox launch, on the exec contract.
 ///
-/// AC1 (proxy): a raw-mode probe (`stty raw -echo`) survives the confined
-/// spawn on a real pty — cold, cache-hit, and after-edit.
+/// #113 (exec default): from a tty cube-sandbox REPLACES ITSELF with the
+/// confined harness via execve — measured mid-flight: the test's direct
+/// child pid IS the probe's pid (cube → sandbox-exec → harness, one
+/// pid), its image is no longer the launcher, and NO cube-sandbox
+/// process remains resident. AC1 (proxy): a raw-mode probe (`stty raw
+/// -echo`) survives the confined launch on a real pty — cold, cache-hit,
+/// and after-edit.
 /// AC2/IT-1: IDENTICAL arguments produce byte-identical spawn records
 /// (`CUBE_SANDBOX_SPAWN_LOG`) on the fresh-build and cache-hit paths —
 /// inheritStdio, no detach. Records for differing argv differ in the
@@ -19,17 +25,22 @@ import '../helpers/e2e_helpers.dart' as h;
 /// AC3/IT-3: volatile per-launch argv (--session uuids) stages nothing
 /// new and prints no warning; an emit-identical edit re-ties provenance
 /// loudly (#70); a real emit-input change rebuilds under a new key.
-/// E2 (opt-out): --spawn-exit is honored from a tty (record wait:false).
-/// E6: SIGINT to the waiting launcher surfaces the harness's mapped
-/// death (130 — trap or mapped signal), never the launcher's own.
+/// E2: --spawn-exit from a tty is exec like the default — it can no
+/// longer leave a resident launcher, so the #81 orphan/HUP hazard is
+/// unconstructible; the record keeps wait:false.
+/// E6: SIGINT always reaches the harness through the exec'd image and no
+/// launcher stays resident; the native 130 mapping (signal n => 128+n via
+/// the shell) is pinned under the one-pid exec chain, while a runner
+/// whose headless sandbox-exec forks the harness is documented, not
+/// papered over. `--wait` keeps the #81 blocking watcher (the launcher
+/// never dies of its own SIGINT).
 ///
 /// Platform facts this battery is built on (pinned, never silent):
 /// - ps UNDER the profile is not reliable on newer macOS (E2E-7
 ///   precedent) — the probe publishes its own pid, and pgid/tpgid are
 ///   measured mid-flight from the UNCONFINED test process.
-/// - script(1) exits at its direct child's death; the pty master then
-///   closes and the orphaned harness gets SIGHUP. Scripts that must
-///   outlive the launcher ignore HUP explicitly.
+/// - script(1) exits at its direct child's death — under exec that IS
+///   the harness, so a pty launch lives exactly as long as the probe.
 /// - Wrapper exit status is intentionally NOT asserted — script(1)
 ///   propagation is not part of this contract; behavioral truth comes
 ///   from probe output, spawn records, staging state, and external ps.
@@ -127,9 +138,56 @@ sleep "\$HOLD"
     ...?extra,
   };
 
+  /// One integer from ps, mid-flight, measured from the UNCONFINED test
+  /// process (ps under the profile is unreliable — E2E-7 precedent).
+  int psInt(String expr) {
+    final r = Process.runSync('/bin/sh', ['-c', expr]);
+    final t = (r.stdout as String).trim();
+    expect(
+      t,
+      isNotEmpty,
+      reason: 'ps produced no output for "$expr" (exit ${r.exitCode})',
+    );
+    return int.parse(t);
+  }
+
+  final launcherName = h.ensureBinary().split('/').last;
+
+  /// #113 exec contract, measured mid-flight from OUTSIDE the sandbox:
+  /// the script child that was cube-sandbox now carries the PROBE's pid
+  /// (cube execed into sandbox-exec which execed into the harness — one
+  /// pid, never respawned), the image is no longer the launcher, and no
+  /// cube-sandbox process is resident anywhere.
+  void expectExecSwap(Process script, String probePid) {
+    final launcherPid = psInt('pgrep -P ${script.pid}');
+    expect(
+      launcherPid,
+      int.parse(probePid),
+      reason:
+          '#113: the probe pid IS the former launcher pid — the image '
+          'was replaced in place, not respawned',
+    );
+    final r = Process.runSync('/bin/sh', [
+      '-c',
+      'ps -o ucomm= -p $launcherPid',
+    ]);
+    final ucomm = (r.stdout as String).trim();
+    expect(
+      ucomm,
+      isNot(launcherName),
+      reason: '#113: the launcher image is gone (this pid now runs: $ucomm)',
+    );
+    final resident = Process.runSync('/usr/bin/pgrep', ['-x', launcherName]);
+    expect(
+      resident.exitCode,
+      1,
+      reason: 'zero resident launcher (#113); found: ${resident.stdout}',
+    );
+  }
+
   /// Launches the compiled binary under script(1) WITHOUT waiting for
-  /// completion: stdin is a pty, so the tty-wait default engages and the
-  /// launcher holds the foreground while the probe sleeps.
+  /// completion: stdin is a pty, so the #113 exec default engages — the
+  /// launcher image is replaced and the probe (its pid now) sleeps.
   Future<Process> spawnPty(
     List<String> args, {
     Map<String, String>? extraEnv,
@@ -140,8 +198,9 @@ sleep "\$HOLD"
     environment: env(extraEnv),
   );
 
-  /// Waits for the probe to publish its pid, measures pgid/tpgid from
-  /// the unconfined test process, then collects the full launch output.
+  /// Waits for the probe to publish its pid, asserts the #113 exec swap
+  /// mid-flight, measures pgid/tpgid from the unconfined test process,
+  /// then collects the full launch output.
   Future<({String out, int pgid, int tpgid})> launchPty(
     List<String> args, {
     required String pubPath,
@@ -165,17 +224,7 @@ sleep "\$HOLD"
     }
     expect(pid, isNotNull, reason: 'probe never published its pid to $pubPath');
 
-    int psInt(String expr) {
-      final r = Process.runSync('/bin/sh', ['-c', expr]);
-      final t = (r.stdout as String).trim();
-      expect(
-        t,
-        isNotEmpty,
-        reason: 'ps produced no output for "$expr" (exit ${r.exitCode})',
-      );
-      return int.parse(t);
-    }
-
+    expectExecSwap(p, pid!);
     final pgid = psInt('ps -o pgid= -p $pid');
     final tpgid = psInt('ps -o tpgid= -p $pid');
     final out = await p.stdout.transform(utf8.decoder).join();
@@ -199,8 +248,8 @@ sleep "\$HOLD"
       reason: 'raw-mode probe must succeed — output:\n$out',
     );
     // IT-2: the child pgrp OWNS the tty foreground (pgid == tpgid),
-    // measured mid-flight from outside — the launcher held it, nothing
-    // backgrounded the harness.
+    // measured mid-flight from outside — under #113 the harness IS the
+    // shell's foreground job; nothing ever backgrounded it.
     expect(pgid, tpgid, reason: 'child pgrp must be foreground (IT-2)');
   }
 
@@ -224,7 +273,11 @@ sleep "\$HOLD"
     final j1 = jsonDecode(records[0]) as Map<String, dynamic>;
     expect(j1['backend'], 'sandbox-exec');
     expect(j1['mode'], 'inheritStdio');
-    expect(j1['wait'], isTrue, reason: 'pty caller holds foreground');
+    expect(
+      j1['wait'],
+      isFalse,
+      reason: '#113: tty default is exec — not the blocking shape',
+    );
     expect((j1['argv'] as List).last, 'u-1');
 
     // L2 — cache-hit, IDENTICAL arguments: AC2's record-equality pair.
@@ -331,59 +384,166 @@ sleep "\$HOLD"
   );
 
   kernelPtyTest(
-    'E2/#53: --spawn-exit is honored from a terminal (record wait:false, '
-    'fast return; survival is headless-only — the tty hazard is the doc)',
+    'E2/#113: --spawn-exit from a terminal is exec — image replaced, '
+    'record wait:false, harness lives out its natural life',
     () async {
+      // Under #113 the flag can no longer spawn-and-return from a tty:
+      // exec leaves nothing resident, so there is nothing to hand back.
+      // The launch therefore lasts exactly the harness lifetime
+      // (launchPty joins after the probe's HOLD) and the mid-flight
+      // assertions prove the image swap. The #81 orphan/HUP hazard this
+      // flag used to carry is unconstructible. The record stays
+      // wait:false — only --wait records true.
       final log = '$proj/spawn.jsonl';
-      // From a tty, --spawn-exit hands the terminal back immediately and
-      // Unix tears the orphan's session down on master close (HUP) —
-      // that is the DOCUMENTED v0.3.1 hazard (#81), not a launcher bug.
-      // The teardown races the harness's FIRST instruction, so nothing
-      // about child progress is assertable here (survival is pinned
-      // headless by launch_spawn_exit_e2e E2E-1/E2E-7, green on CI).
-      // The contract, all stable: fast return while the harness is
-      // still sleeping (a wrongly-waiting launcher would take 8s+),
-      // banner, and a wait:false record — written only after a
-      // successful spawn, so it doubles as spawn-success proof.
-      final markSh = writeScript('marker', 'sleep 8\n');
-      File('$proj/.cube-sandbox/tty3.yaml').writeAsStringSync('''
-apiVersion: cube-sandbox/v1
-kind: Harness
-metadata:
-  name: tty3
-spec:
-  command:
-    - /bin/sh
-    - $markSh
-  agentRoot: $proj
-''');
+      final pub = '$proj/probe-pid';
+      writeManifest('tty3');
       final t0 = DateTime.now();
-      final p = await spawnPty(
-        ['--spawn-exit', 'tty3'],
+      final r = await launchPty(
+        const ['--spawn-exit', 'tty3'],
+        pubPath: pub,
         extraEnv: {'CUBE_SANDBOX_SPAWN_LOG': log},
       );
-      final out = await p.stdout.transform(utf8.decoder).join();
-      final elapsed = DateTime.now().difference(t0);
       expect(
-        elapsed,
-        lessThan(const Duration(seconds: 5)),
+        DateTime.now().difference(t0),
+        greaterThan(const Duration(seconds: 3)),
         reason:
-            'launcher must return immediately from a tty '
-            '(spawn-and-exit), not wait for the harness (sleep 8)',
+            'under exec the launcher IS the harness — a pty launch lasts '
+            'the probe lifetime (HOLD), no fast spawn-and-return',
       );
-      expect(out, contains('under cube-sandbox'), reason: 'banner printed');
-      final lines = File(log).readAsLinesSync();
+      expect(r.out, contains('under cube-sandbox'), reason: 'banner printed');
       expect(
-        jsonDecode(lines.single)['wait'],
+        jsonDecode(File(log).readAsLinesSync().single)['wait'],
         isFalse,
-        reason: 'tty caller forced spawn-and-exit — #53 opt-out honored',
+        reason: 'wait:false marks every non-blocking shape (#113)',
       );
     },
     timeout: const Timeout(Duration(minutes: 2)),
   );
 
+  kernelTest('E6/#113: exec default — SIGINT reaches the harness through '
+      'the exec chain, zero resident launcher; native 130 pinned on a '
+      'one-pid exec chain', () async {
+    final perl = '/usr/bin/perl';
+    if (!File(perl).existsSync()) {
+      fail('/usr/bin/perl missing — cannot isolate a process group');
+    }
+    // Stale files from an earlier run would short-circuit the waits —
+    // start clean (never silent if the probe never shows up).
+    final ready = '$proj/int-ready';
+    final trapped = '$proj/int-trapped';
+    final pidf = '$proj/int-pid';
+    for (final f in [ready, trapped, pidf]) {
+      final f0 = File(f);
+      if (f0.existsSync()) f0.deleteSync();
+    }
+    final intSh = writeScript(
+      'int',
+      "trap 'printf int > \"\$TRAPPED\"; exit 130' INT\n"
+          'printf ready > "\$MARK"\n'
+          'printf \'%s\\n\' "\$\$" > "\$PIDF"\n'
+          'sleep 30\n',
+    );
+    File('$proj/.cube-sandbox/tty4.yaml').writeAsStringSync('''
+apiVersion: cube-sandbox/v1
+kind: Harness
+metadata:
+  name: tty4
+spec:
+  command:
+    - /bin/sh
+    - $intSh
+  agentRoot: $proj
+''');
+    // NO --wait: cube-sandbox execs away at once — there is no launcher
+    // left to watch or map signals. setpgrp(0,0) puts the whole chain
+    // (perl → cube → sandbox-exec → probe) in one group; an INT to it is
+    // the real-terminal ^C shape. What the group's death means for the
+    // wrapper's exit code depends on the runner's sandbox-exec: on a
+    // true one-pid exec chain (owner's box, pty — E2E-1/2 expectExecSwap)
+    // the native mapping surfaces 130; some headless runners' sandbox-exec
+    // FORKS the harness and synthesizes its own exit (Apple's
+    // interposition) — documented below, not papered over.
+    final inner = [
+      perl,
+      '-e',
+      'setpgrp(0, 0); exec @ARGV',
+      '--',
+      h.ensureBinary(),
+      'launch',
+      'tty4',
+    ].map((a) => "'${a.replaceAll("'", r"'\''")}'").join(' ');
+    final p = await Process.start(
+      '/bin/sh',
+      ['-c', inner],
+      workingDirectory: proj,
+      environment: env({'MARK': ready, 'TRAPPED': trapped, 'PIDF': pidf}),
+    );
+    // The probe publishes its own pid (the same self-reporting contract
+    // as the pty probes — ps under the profile is unreliable, E2E-7);
+    // its pgid IS the leader group: setpgrp(0,0) made the whole chain
+    // one group, whatever the wrapper sh forked or execed on the way.
+    final deadline = DateTime.now().add(const Duration(seconds: 30));
+    while (!File(pidf).existsSync() && DateTime.now().isBefore(deadline)) {
+      sleep(const Duration(milliseconds: 50));
+    }
+    expect(File(pidf).existsSync(), isTrue, reason: 'harness started');
+    final probePid = File(pidf).readAsStringSync().trim();
+    expect(probePid, isNotEmpty, reason: 'probe pid published');
+    final pgid = psInt('ps -o pgid= -p $probePid');
+    // True one-pid exec chain: the probe's $$ == the pid this test
+    // spawned (cube execed into sandbox-exec which execed into int.sh).
+    final onePid = probePid == '${p.pid}';
+    final kill = Process.runSync('kill', ['-s', 'INT', '-$pgid']);
+    expect(kill.exitCode, 0, reason: kill.stderr as String);
+    final tDeadline = DateTime.now().add(const Duration(seconds: 10));
+    while (!File(trapped).existsSync() && DateTime.now().isBefore(tDeadline)) {
+      sleep(const Duration(milliseconds: 50));
+    }
+    final code = await p.exitCode;
+    final diag =
+        'trapped=${File(trapped).existsSync() ? File(trapped).readAsStringSync().trim() : 'MISSING'} '
+        'rawCode=$code onePid=$onePid '
+        'probePid=$probePid wrapperPid=${p.pid}';
+    print('E6/#113 diag: $diag');
+    // (a) The INT reached the harness through the exec chain — ALWAYS.
+    expect(
+      File(trapped).existsSync(),
+      isTrue,
+      reason: 'SIGINT reached the probe INSIDE the exec\'d image: $diag',
+    );
+    // (b) #113 core — nothing resident, whatever the sandbox-exec build.
+    final resident = Process.runSync('/usr/bin/pgrep', ['-x', launcherName]);
+    expect(
+      resident.exitCode,
+      1,
+      reason: 'zero resident launcher (#113); found: ${resident.stdout}',
+    );
+    // (c) Exit code: the native signal mapping (signal n => 128+n via the
+    // shell) is cube's guarantee on a one-pid exec chain; in the
+    // platform-fork case the code is Apple's interposed parenting, so it
+    // is documented — not pinned.
+    if (onePid) {
+      expect(
+        code,
+        130,
+        reason:
+            'native signal mapping through the one-pid '
+            'exec chain — nothing intercepted or remapped it',
+      );
+    } else {
+      print(
+        'E6/#113 platform note: runner sandbox-exec forks the harness '
+        'headless (probe $probePid != chain pid ${p.pid}) — native code '
+        "mapping is Apple's interposition, see issue #113",
+      );
+    }
+    await p.stdout.drain<void>();
+    await p.stderr.drain<void>();
+  }, timeout: const Timeout(Duration(minutes: 2)));
+
   kernelTest(
-    'E6/#81: SIGINT to the waiting launcher surfaces the harness death (130)',
+    'E6/#81 (--wait shape): SIGINT to the waiting launcher surfaces the '
+    'harness death (130)',
     () async {
       final perl = '/usr/bin/perl';
       if (!File(perl).existsSync()) {
