@@ -44,4 +44,35 @@ void main() {
     // key (C2); the log proves the tail is forwarded verbatim (#43).
     expect((m['argv'] as List).last, 'u-123');
   });
+
+  test('argv is byte-identical across all three launch shapes (#113)', () {
+    // exec and spawnExit record wait:false, wait records true — the ONLY
+    // field that may differ. The child argv never does: the harness sees
+    // the same `-f <profile> <command…>` whatever shape launched it.
+    List<dynamic> argvOf(bool wait) =>
+        (jsonDecode(
+                  spawnLogLine(
+                    backend: 'sandbox-exec',
+                    profilePath: '/p/harness-abc.sb',
+                    command: const [
+                      '/bin/sh',
+                      'probe.sh',
+                      '--session',
+                      'u-123',
+                    ],
+                    wait: wait,
+                  ),
+                )
+                as Map<String, dynamic>)['argv']
+            as List<dynamic>;
+    expect(argvOf(false), argvOf(true));
+    expect(argvOf(false), [
+      '-f',
+      '/p/harness-abc.sb',
+      '/bin/sh',
+      'probe.sh',
+      '--session',
+      'u-123',
+    ]);
+  });
 }

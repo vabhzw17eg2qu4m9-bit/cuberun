@@ -1,41 +1,68 @@
 import 'package:cube_sandbox/src/launcher.dart';
 import 'package:test/test.dart';
 
-/// Issue #81 C1(b) — the launch-mode policy: a TUI caller (stdin is a
-/// terminal) needs the launcher to HOLD the foreground for the child's
-/// lifetime; a headless caller keeps #53 spawn-and-exit byte-identical.
-/// Explicit flags always win; `--spawn-exit` exists precisely to force
-/// the legacy shape from a terminal.
+/// Issue #113 — the launch-shape policy matrix, all six rows. A tty
+/// caller execs into the confined harness (zero resident launcher — the
+/// #81 raw-mode EIO hazard is unconstructible); headless callers keep
+/// #53 spawn-and-exit byte-identical; explicit `--wait` forces the
+/// blocking parent shape everywhere. `--spawn-exit` survives for CLI
+/// compatibility only: it can no longer change the shape.
 void main() {
-  test('explicit --wait waits, even headless', () {
+  test('tty + default: exec — cube-sandbox replaces itself (#113)', () {
     expect(
-      shouldWait(waitFlag: true, spawnExitFlag: false, stdinHasTerminal: false),
-      isTrue,
+      launchShape(
+        waitFlag: false,
+        spawnExitFlag: false,
+        stdinHasTerminal: true,
+      ),
+      LaunchShape.exec,
     );
   });
 
-  test('explicit --spawn-exit forces spawn-and-exit, even on a tty', () {
+  test('tty + --spawn-exit: exec (nothing resident to opt out of)', () {
     expect(
-      shouldWait(waitFlag: false, spawnExitFlag: true, stdinHasTerminal: true),
-      isFalse,
+      launchShape(waitFlag: false, spawnExitFlag: true, stdinHasTerminal: true),
+      LaunchShape.exec,
     );
   });
 
-  test('tty default holds the foreground (wait)', () {
+  test('tty + --wait: blocking parent shape (#81 verbatim)', () {
     expect(
-      shouldWait(waitFlag: false, spawnExitFlag: false, stdinHasTerminal: true),
-      isTrue,
+      launchShape(waitFlag: true, spawnExitFlag: false, stdinHasTerminal: true),
+      LaunchShape.wait,
     );
   });
 
-  test('headless default stays spawn-and-exit (#53 invariant)', () {
+  test('headless + default: spawn-and-exit (#53 invariant)', () {
     expect(
-      shouldWait(
+      launchShape(
         waitFlag: false,
         spawnExitFlag: false,
         stdinHasTerminal: false,
       ),
-      isFalse,
+      LaunchShape.spawnExit,
+    );
+  });
+
+  test('headless + --spawn-exit: spawn-and-exit (same as default)', () {
+    expect(
+      launchShape(
+        waitFlag: false,
+        spawnExitFlag: true,
+        stdinHasTerminal: false,
+      ),
+      LaunchShape.spawnExit,
+    );
+  });
+
+  test('headless + --wait: blocking parent shape', () {
+    expect(
+      launchShape(
+        waitFlag: true,
+        spawnExitFlag: false,
+        stdinHasTerminal: false,
+      ),
+      LaunchShape.wait,
     );
   });
 }
