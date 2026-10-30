@@ -15,6 +15,7 @@ void main() {
     String tmp = '/private/var/folders/ab/T123',
     List<String> extraRead = const [],
     List<String> extraWrite = const [],
+    List<String> extraWritePrefix = const [],
     List<String> runtimeDirs = const [],
   }) => HarnessRuntime(
     projDir: projDir,
@@ -22,6 +23,7 @@ void main() {
     tmp: tmp,
     extraRead: extraRead,
     extraWrite: extraWrite,
+    extraWritePrefix: extraWritePrefix,
     runtimeDirs: runtimeDirs,
   );
 
@@ -41,6 +43,10 @@ void main() {
       isNot(base),
     );
     expect(emitProfile(rt(extraWrite: ['/Users/dev/rw'])).key10, isNot(base));
+    expect(
+      emitProfile(rt(extraWritePrefix: ['/Users/dev/rw'])).key10,
+      isNot(base),
+    );
     expect(emitProfile(rt(runtimeDirs: ['/opt/homebrew'])).key10, isNot(base));
     expect(emitProfile(rt(agentRoot: '/Users/dev/.other')).key10, isNot(base));
     expect(emitProfile(rt(projDir: '/Users/dev/other')).key10, isNot(base));
@@ -206,6 +212,10 @@ void main() {
       contains('(allow file-read* (subpath "/private/var/db/dyld"))'),
     );
     expect(text, contains('(allow file-read* (subpath "/private/var/run"))'));
+    expect(
+      text,
+      contains('(allow file-read* (subpath "/private/var/db/timezone"))'),
+    );
   });
 
   test('read grants re-allowed with both spellings; rw grants read too', () {
@@ -214,6 +224,65 @@ void main() {
     ).text;
     expect(text, contains('(allow file-read* (subpath "/Users/dev/.config"))'));
     expect(text, contains('(allow file-read* (subpath "/Users/dev/rw"))'));
+  });
+
+  test('prefix grants emit (prefix ...) for write AND same-scope read '
+      '(issue #139)', () {
+    final text = emitProfile(
+      rt(extraWritePrefix: ['/Users/dev/.claude.json']),
+    ).text;
+    expect(
+      text,
+      contains('(allow file-write* (prefix "/Users/dev/.claude.json"))'),
+    );
+    // rw grants read too — the prefix scope, both macOS spellings.
+    expect(
+      text,
+      contains('(allow file-read* (prefix "/Users/dev/.claude.json"))'),
+    );
+    expect(
+      text,
+      contains('(allow file-read* (prefix "/private/Users/dev/.claude.json"))'),
+    );
+    // No subpath rule duplicates the prefix grant.
+    expect(
+      text,
+      isNot(
+        contains('(allow file-write* (subpath "/Users/dev/.claude.json"))'),
+      ),
+    );
+  });
+
+  test('specificity ordering: literal < prefix < subpath at equal length', () {
+    // Equal-length paths make KIND the only differentiator (comparator:
+    // path length, verb, kind rank, path text). /dev/null is the only
+    // literal the emitter makes; the 9-char prefix is its equal-length
+    // counterpart, and the two 17-char grants pin prefix < subpath.
+    final writes =
+        emitProfile(
+              rt(
+                extraWrite: ['/Users/dev/subAAA'],
+                extraWritePrefix: ['/Users/dev/preBBB', '/dev/nupp'],
+              ),
+            ).text
+            .split('\n')
+            .where((l) => l.contains('file-write*') && l.contains('allow'))
+            .toList();
+    final nullLit = writes.indexWhere(
+      (l) => l.contains('(literal "/dev/null")'),
+    );
+    final prefix9 = writes.indexWhere(
+      (l) => l.contains('(prefix "/dev/nupp")'),
+    );
+    final prefix17 = writes.indexWhere(
+      (l) => l.contains('(prefix "/Users/dev/preBBB")'),
+    );
+    final subpath17 = writes.indexWhere(
+      (l) => l.contains('(subpath "/Users/dev/subAAA")'),
+    );
+    expect(nullLit, lessThan(prefix9), reason: 'literal < prefix');
+    expect(prefix9, lessThan(prefix17), reason: 'path length dominates kind');
+    expect(prefix17, lessThan(subpath17), reason: 'prefix < subpath');
   });
 
   test('runtime dirs get read allows (E5)', () {

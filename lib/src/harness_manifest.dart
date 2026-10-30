@@ -14,6 +14,7 @@
 ///   widenToDotParent: true   # optional: ~/.pi/agent -> ~/.pi
 ///   extraRead:  [...]        # optional: read-only grants
 ///   extraWrite: [...]        # optional: read-write grants
+///   extraWritePrefix: [...]  # optional: read-write prefix grants
 ///   network: open            # optional: 'open' only in v1
 /// ```
 ///
@@ -62,6 +63,7 @@ final class HarnessSpec {
     this.widenToDotParent = false,
     this.extraRead = const [],
     this.extraWrite = const [],
+    this.extraWritePrefix = const [],
     this.network = HarnessNetwork.open,
   });
 
@@ -89,6 +91,12 @@ final class HarnessSpec {
 
   /// Extra read-write grants (lexical, `~` allowed).
   final List<String> extraWrite;
+
+  /// Extra read-write PREFIX grants (issue #139): the SBPL `(prefix ...)`
+  /// filter — the path AND every lexical string-prefix sibling (e.g.
+  /// `~/.claude.json` covers the exact file plus `.claude.json.tmp.<rand>`,
+  /// `.lock`, `.backup`). Same sanitation as [extraWrite].
+  final List<String> extraWritePrefix;
 
   /// Network stance (open only in v1).
   final HarnessNetwork network;
@@ -174,6 +182,7 @@ final class HarnessSpec {
       'widenToDotParent',
       'extraRead',
       'extraWrite',
+      'extraWritePrefix',
       'network',
     }, '$sourcePath.spec');
 
@@ -240,6 +249,10 @@ final class HarnessSpec {
         spec['extraWrite'],
         '$sourcePath.spec.extraWrite',
       ),
+      extraWritePrefix: _sanitizePathList(
+        spec['extraWritePrefix'],
+        '$sourcePath.spec.extraWritePrefix',
+      ),
       network: HarnessNetwork.parse(
         spec['network'],
         '$sourcePath.spec.network',
@@ -268,6 +281,7 @@ final class HarnessSpec {
     }
     _emitPathList(b, 'extraRead', extraRead);
     _emitPathList(b, 'extraWrite', extraWrite);
+    _emitPathList(b, 'extraWritePrefix', extraWritePrefix);
     b.writeln('  network: open');
     return b.toString();
   }

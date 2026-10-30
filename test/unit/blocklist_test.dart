@@ -14,6 +14,7 @@ void main() {
   HarnessSpec specWith({
     List<String> extraRead = const [],
     List<String> extraWrite = const [],
+    List<String> extraWritePrefix = const [],
     String agentRoot = '~/.pi',
   }) => HarnessSpec(
     name: 't',
@@ -21,6 +22,7 @@ void main() {
     agentRoot: agentRoot,
     extraRead: extraRead,
     extraWrite: extraWrite,
+    extraWritePrefix: extraWritePrefix,
   );
 
   group('manifest sources rejected at resolve', () {
@@ -69,6 +71,50 @@ void main() {
         ),
         throwsA(isA<ConfigException>()),
       );
+    });
+  });
+
+  group('prefix grants (issue #139) rejected at resolve', () {
+    for (final (label, prefix) in [
+      ('extraWritePrefix ~/.ssh', '~/.ssh'),
+      ('extraWritePrefix INSIDE ~/.ssh', '~/.ssh/keys'),
+      ('extraWritePrefix ~/Library/Keychains', '~/Library/Keychains'),
+      // The prefix direction is stricter: a SHORT prefix that would
+      // string-prefix-COVER an ungrantable root is denied too.
+      ('extraWritePrefix covering ~/.ssh', '~/.ss'),
+      ('extraWritePrefix covering Keychains', '~/Library/Keychain'),
+    ]) {
+      test(label, () {
+        expect(
+          () => resolveRuntime(
+            specWith(extraWritePrefix: [prefix]),
+            services: const {},
+            cwd: '/w',
+            home: home,
+            env: const {},
+            fs: _FakeIO(),
+          ),
+          throwsA(
+            isA<ConfigException>().having(
+              (e) => e.message,
+              'message',
+              allOf([contains('ungrantable'), contains('E10')]),
+            ),
+          ),
+        );
+      });
+    }
+
+    test('a prefix sibling of an E10 root grants cleanly and expands', () {
+      final rt = resolveRuntime(
+        specWith(extraWritePrefix: ['~/.claude.json']),
+        services: const {},
+        cwd: '/w',
+        home: home,
+        env: const {},
+        fs: _FakeIO(),
+      );
+      expect(rt.extraWritePrefix, ['$home/.claude.json']);
     });
   });
 
@@ -133,6 +179,30 @@ void main() {
     );
     expect(ungrantableViolations(['/opt/homebrew'], home), isEmpty);
   });
+
+  test(
+    'ungrantablePrefixViolations: covering prefixes caught (issue #139)',
+    () {
+      // On the root, under it — and the prefix-specific direction: a short
+      // prefix that would string-prefix-COVER the root.
+      expect(ungrantablePrefixViolations(['$home/.ssh'], home), ['$home/.ssh']);
+      expect(ungrantablePrefixViolations(['$home/.ssh/id_rsa'], home), [
+        '$home/.ssh/id_rsa',
+      ]);
+      expect(ungrantablePrefixViolations(['$home/.ss'], home), ['$home/.ss']);
+      expect(ungrantablePrefixViolations(['$home/Library/Keychain'], home), [
+        '$home/Library/Keychain',
+      ]);
+      // Non-covering prefixes stay grantable; a sibling with the same
+      // string prefix but a longer name is NOT a cover (SBPL prefix is a
+      // literal string match: ~/.ssh2 does not grant ~/.ssh/...).
+      expect(
+        ungrantablePrefixViolations(['$home/.claude.json'], home),
+        isEmpty,
+      );
+      expect(ungrantablePrefixViolations(['$home/.ssh2'], home), isEmpty);
+    },
+  );
 
   test('shipped catalog never touches ungrantable roots', () {
     for (final g in kServiceCatalog) {

@@ -13,21 +13,24 @@ void main() {
     String agentRoot, {
     List<String> extraRead = const [],
     List<String> extraWrite = const [],
+    List<String> extraWritePrefix = const [],
   }) => HarnessRuntime(
     projDir: '/Users/dev/proj',
     agentRoot: agentRoot,
     tmp: '/private/var/folders/ab/T123',
     extraRead: extraRead,
     extraWrite: extraWrite,
+    extraWritePrefix: extraWritePrefix,
     runtimeDirs: const [],
   );
 
   final runtimes = <String, HarnessRuntime>{
     'claude': fixed(
       '/Users/dev/.claude',
-      extraWrite: const [
+      extraWritePrefix: const [
         '/Users/dev/.claude.json',
-        '/Users/dev/.claude.json.backup',
+        '/tmp/claude',
+        '/tmp/cc-socks',
       ],
     ),
     'claude-desktop': fixed(
@@ -61,33 +64,38 @@ void main() {
   });
 
   test('AC-C5: preset catalog + per-preset grant lists pinned', () {
-    // Format: id|command|agentRoot|agentRootEnv|extraWrite, in id order.
+    // Format: id|command|agentRoot|agentRootEnv|extraWrite|extraWritePrefix,
+    // in id order. #140: claude-desktop command is a fixed argv list
+    // (command.first pins argv0; the --no-sandbox tail is a UT pin).
     final pins = [
-      'claude|claude|~/.claude|CLAUDE_CONFIG_DIR|'
-          '~/.claude.json,~/.claude.json.backup',
+      'claude|claude|~/.claude|CLAUDE_CONFIG_DIR||'
+          '~/.claude.json,/tmp/claude,/tmp/cc-socks',
       'claude-desktop|/Applications/Claude.app/Contents/MacOS/Claude|'
           '~/Library/Application Support/Claude||'
-          '~/Library/Logs/Claude,~/Library/Caches/com.anthropic.claude',
-      'fa|fa|~/.fah||',
-      'omp|omp|~/.omp|OMP_AGENT_DIR|',
-      'pi|pi|~/.pi/agent|PI_CODING_AGENT_DIR|',
+          '~/Library/Logs/Claude,~/Library/Caches/com.anthropic.claude|',
+      'fa|fa|~/.fah|||',
+      'omp|omp|~/.omp|OMP_AGENT_DIR||',
+      'pi|pi|~/.pi/agent|PI_CODING_AGENT_DIR||',
     ];
     final actual = [
       for (final e in HarnessPresets.loadAll().entries)
         '${e.key}|${e.value.command.first}|${e.value.agentRoot}'
-            '|${e.value.agentRootEnv ?? ''}|${e.value.extraWrite.join(',')}',
+            '|${e.value.agentRootEnv ?? ''}|${e.value.extraWrite.join(',')}'
+            '|${e.value.extraWritePrefix.join(',')}',
     ];
     expect(actual, pins);
   });
 
   test('key10 pins (confinement drift detector)', () {
     // These literals ARE the regression pins: any change to profile
-    // semantics for the same facts turns this red.
-    expect(claude.key10, '1557757dc9');
-    expect(claudeDesktop.key10, '46d20a8ae9');
-    expect(fa.key10, 'e8ee06804e');
-    expect(omp.key10, 'a969c70e85');
-    expect(pi.key10, 'c3f35f98a1');
+    // semantics for the same facts turns this red. #140 note: the
+    // claude-desktop --no-sandbox argv is NOT a profile input — its
+    // key10 is unchanged by the fix.
+    expect(claude.key10, '3644a240ab');
+    expect(claudeDesktop.key10, '32c1ae00af');
+    expect(fa.key10, '43ed537405');
+    expect(omp.key10, 'b557bf6d4e');
+    expect(pi.key10, '6adeab7f88');
   });
 
   test('identical facts => identical text, always', () {
@@ -95,9 +103,10 @@ void main() {
       emitProfile(
         fixed(
           '/Users/dev/.claude',
-          extraWrite: const [
+          extraWritePrefix: const [
             '/Users/dev/.claude.json',
-            '/Users/dev/.claude.json.backup',
+            '/tmp/claude',
+            '/tmp/cc-socks',
           ],
         ),
       ).text,
@@ -161,6 +170,10 @@ void main() {
           text,
           contains('(allow file-read* (subpath "/private/var/run"))'),
         );
+        expect(
+          text,
+          contains('(allow file-read* (subpath "/private/var/db/timezone"))'),
+        );
       });
 
       test('writes: bare deny + /dev/null + /dev/fd + rw roots only', () {
@@ -182,6 +195,7 @@ void main() {
           '/Users/dev/proj',
           '/private/var/folders/ab/T123',
           ...rt.extraWrite,
+          ...rt.extraWritePrefix,
         ];
         final foreignWriteAllows = text
             .split('\n')
@@ -201,4 +215,38 @@ void main() {
       });
     });
   }
+
+  test('REG: claude grants the ~/.claude.json sibling family by prefix '
+      '(issue #139)', () {
+    // The exact file AND its atomic-write siblings ride ONE prefix rule;
+    // both spellings re-allowed for reads with the same scope.
+    expect(
+      claude.text,
+      contains('(allow file-write* (prefix "/Users/dev/.claude.json"))'),
+    );
+    expect(
+      claude.text,
+      contains('(allow file-read* (prefix "/Users/dev/.claude.json"))'),
+    );
+    expect(
+      claude.text,
+      contains('(allow file-read* (prefix "/private/Users/dev/.claude.json"))'),
+    );
+    // The old literal for the .backup sibling is gone — covered by the
+    // prefix (its string-prefix sibling family), never a separate rule.
+    expect(claude.text, isNot(contains('.claude.json.backup')));
+  });
+
+  test('REG: claude grants the /tmp/claude-<uid> staging family '
+      '(fresh-box startup, CI-proven)', () {
+    // Claude Code mkdirs the literal /tmp/claude-<uid> at startup and
+    // wedges with an uncaught EPERM when it does not exist — the prefix
+    // grant covers any uid, both kernel spellings.
+    expect(claude.text, contains('(allow file-write* (prefix "/tmp/claude"))'));
+    expect(claude.text, contains('(allow file-read* (prefix "/tmp/claude"))'));
+    expect(
+      claude.text,
+      contains('(allow file-read* (prefix "/private/tmp/claude"))'),
+    );
+  });
 }

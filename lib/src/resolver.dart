@@ -207,6 +207,7 @@ final class HarnessResolver {
             widenToDotParent: spec.widenToDotParent,
             extraRead: spec.extraRead,
             extraWrite: spec.extraWrite,
+            extraWritePrefix: spec.extraWritePrefix,
             network: spec.network,
           );
     return ResolvedHarness(

@@ -8,7 +8,9 @@
 ///   only, LLM endpoints sit on rotating CDN IPs; per-task denies are the
 ///   inner cubes' job).
 /// - writes deny-by-default (bare deny), allowed only for: project dir,
-///   agent root, realpath($TMPDIR), extraWrite, /dev/null, /dev/fd.
+///   agent root, realpath($TMPDIR), extraWrite, extraWritePrefix
+///   (issue #139 `(prefix ...)` — a path plus its string-prefix
+///   siblings), /dev/null, /dev/fd.
 /// - reads: curated denies over user-data roots (BOTH macOS spellings,
 ///   E2) with metadata re-allows so path resolution lives (a bare
 ///   `(deny file-read*)` makes the SBPL compiler ABORT — E1); system
@@ -37,14 +39,20 @@ const List<String> kReadDenyRoots = <String>[
 ];
 
 /// Re-allows under the deny roots that the system needs to function.
+/// /var/db/timezone (both spellings via the emit loop) is ICU/libc
+/// tzset data: a static-init read that, when denied, sends some
+/// runtimes (Bun/JIT — measured with claude 2.1.314) into a silent
+/// 100%-CPU trap/handler retry loop BEFORE main (issue #139 bisect:
+/// C spins, C+tz boots).
 const List<String> kReadSystemReallows = <String>[
   '/private/var/db/dyld', // dyld shared cache — exec of system binaries
   '/private/var/run', // resolv.conf symlink target + mDNSResponder socket
+  '/var/db/timezone', // tz database — ICU/libc tzset at static init
 ];
 
 enum _Verb { allow, deny }
 
-enum _Kind { bare, literal, subpath }
+enum _Kind { bare, literal, prefix, subpath }
 
 final class _Rule {
   const _Rule(this.verb, this.kind, this.path, {this.metadata = false});
@@ -56,11 +64,12 @@ final class _Rule {
 }
 
 /// Lexicographic sort key: bare rules first (length -1), then path length,
-/// verb (deny < allow), kind (literal < subpath), finally path text.
+/// verb (deny < allow), kind (literal < prefix < subpath), finally path
+/// text — last-match-wins means the most specific matching rule wins.
 List<Comparable<Object?>> _sortKey(_Rule r) => <Comparable<Object?>>[
   r.kind == _Kind.bare ? -1 : r.path.length,
   r.verb == _Verb.deny ? 0 : 1,
-  r.kind == _Kind.literal ? 0 : 1,
+  r.kind == _Kind.literal ? 0 : (r.kind == _Kind.prefix ? 1 : 2),
   r.path,
 ];
 
@@ -78,10 +87,12 @@ String _emit(_Rule r, String op) {
   if (r.kind == _Kind.bare) {
     return '(${r.verb.name} ${r.metadata ? 'file-read-metadata' : op})';
   }
-  final arg = r.kind == _Kind.literal
+  final filter = r.kind == _Kind.literal
       ? '(literal "${r.path}")'
+      : r.kind == _Kind.prefix
+      ? '(prefix "${r.path}")'
       : '(subpath "${r.path}")';
-  return '(${r.verb.name} ${r.metadata ? 'file-read-metadata' : op} $arg)';
+  return '(${r.verb.name} ${r.metadata ? 'file-read-metadata' : op} $filter)';
 }
 
 /// The emitted profile: deterministic text + its content key.
@@ -96,22 +107,27 @@ final class SbplProfile {
   final String key10;
 }
 
-/// Emits the deterministic SBPL profile for [runtime].
-SbplProfile emitProfile(HarnessRuntime runtime) {
-  final lines = <String>['(version 1)', '(allow default)', '(allow network*)'];
+/// Writes: bare deny first, then explicit allows — /dev/null, /dev/fd,
+/// project dir, agent root, realpath($TMPDIR), subpath extras, and the
+/// issue-#139 prefix grants.
+List<_Rule> _writeRules(HarnessRuntime runtime) => <_Rule>[
+  const _Rule(_Verb.deny, _Kind.bare, ''),
+  const _Rule(_Verb.allow, _Kind.literal, '/dev/null'),
+  const _Rule(_Verb.allow, _Kind.subpath, '/dev/fd'),
+  _Rule(_Verb.allow, _Kind.subpath, runtime.projDir),
+  _Rule(_Verb.allow, _Kind.subpath, runtime.agentRoot),
+  _Rule(_Verb.allow, _Kind.subpath, runtime.tmp),
+  for (final p in runtime.extraWrite) _Rule(_Verb.allow, _Kind.subpath, p),
+  // Prefix grants emit BOTH macOS spellings (E2): /tmp, /var and /Users
+  // resolve under /private for the kernel, and a single-spelling prefix
+  // silently misses the resolved path (issue #139 /tmp/claude-<uid>).
+  for (final p in runtime.extraWritePrefix)
+    for (final sp in bothSpellingsOf(p)) _Rule(_Verb.allow, _Kind.prefix, sp),
+];
 
-  // --- writes: bare deny, then explicit allows.
-  final writes = <_Rule>[
-    const _Rule(_Verb.deny, _Kind.bare, ''),
-    const _Rule(_Verb.allow, _Kind.literal, '/dev/null'),
-    const _Rule(_Verb.allow, _Kind.subpath, '/dev/fd'),
-    _Rule(_Verb.allow, _Kind.subpath, runtime.projDir),
-    _Rule(_Verb.allow, _Kind.subpath, runtime.agentRoot),
-    _Rule(_Verb.allow, _Kind.subpath, runtime.tmp),
-    for (final p in runtime.extraWrite) _Rule(_Verb.allow, _Kind.subpath, p),
-  ];
-
-  // --- reads: curated denies + metadata re-allows + grant re-allows.
+/// Read denies over the curated user-data roots, both spellings, with
+/// the metadata re-allows that keep path resolution alive (E1/E2).
+List<_Rule> _readDenyRules() {
   final reads = <_Rule>[];
   for (final root in kReadDenyRoots) {
     for (final p in bothSpellingsOf(root)) {
@@ -121,6 +137,13 @@ SbplProfile emitProfile(HarnessRuntime runtime) {
       reads.add(_Rule(_Verb.allow, _Kind.subpath, p, metadata: true));
     }
   }
+  return reads;
+}
+
+/// Read re-allows: system roots, runtime dirs, every read grant — and
+/// every rw grant (writes imply reads). Prefix grants read with the
+/// SAME string-prefix scope as their write (issue #139).
+List<_Rule> _readGrantRules(HarnessRuntime runtime) {
   final reallow = <String>[
     ...kReadSystemReallows,
     runtime.projDir,
@@ -130,17 +153,30 @@ SbplProfile emitProfile(HarnessRuntime runtime) {
     ...runtime.extraRead,
     ...runtime.extraWrite, // rw grants read too
   ];
-  final seenRead = <String>{};
-  for (final root in reallow) {
+  final reads = <_Rule>[];
+  final seen = <String>{};
+  void add(String root, _Kind kind) {
     for (final p in bothSpellingsOf(root)) {
-      if (seenRead.add(p)) {
-        reads.add(_Rule(_Verb.allow, _Kind.subpath, p));
-      }
+      if (seen.add(p)) reads.add(_Rule(_Verb.allow, kind, p));
     }
   }
 
-  writes.sort(_compare);
-  reads.sort(_compare);
+  for (final root in reallow) {
+    add(root, _Kind.subpath);
+  }
+  for (final p in runtime.extraWritePrefix) {
+    add(p, _Kind.prefix);
+  }
+  return reads;
+}
+
+/// Emits the deterministic SBPL profile for [runtime].
+SbplProfile emitProfile(HarnessRuntime runtime) {
+  final lines = <String>['(version 1)', '(allow default)', '(allow network*)'];
+
+  final writes = _writeRules(runtime)..sort(_compare);
+  final reads = [..._readDenyRules(), ..._readGrantRules(runtime)]
+    ..sort(_compare);
   for (final r in writes) {
     lines.add(_emit(r, 'file-write*'));
   }

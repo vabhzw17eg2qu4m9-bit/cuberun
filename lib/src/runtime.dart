@@ -74,6 +74,7 @@ final class HarnessRuntime {
     required this.tmp,
     this.extraRead = const [],
     this.extraWrite = const [],
+    this.extraWritePrefix = const [],
     this.runtimeDirs = const [],
     this.services = const {},
     this.warnings = const [],
@@ -93,6 +94,12 @@ final class HarnessRuntime {
 
   /// Read-write grants: manifest extraWrite + service write + env knob.
   final List<String> extraWrite;
+
+  /// Read-write PREFIX grants (issue #139): manifest extraWritePrefix,
+  /// emitted as SBPL `(prefix ...)` — the path plus its string-prefix
+  /// siblings. Manifest-only: services, folder groups and env knobs
+  /// grant exact roots, never prefixes.
+  final List<String> extraWritePrefix;
 
   /// Runtime prefixes of the launch command + its shebang interpreter
   /// (E5 — the dir holding the command must be readable or nothing
@@ -127,6 +134,7 @@ final class HarnessRuntime {
       tmp: tmp,
       extraRead: read == null ? extraRead : merge(extraRead, read),
       extraWrite: write == null ? extraWrite : merge(extraWrite, write),
+      extraWritePrefix: extraWritePrefix,
       runtimeDirs: runtimeDirs,
       services: services,
       warnings: merge(this.warnings, warnings),
@@ -203,16 +211,25 @@ HarnessRuntime _resolve(
   // --- declarative grants (manifest) + ungrantable check (E10).
   final manifestRead = [for (final p in spec.extraRead) expandTilde(p, home)];
   final manifestWrite = [for (final p in spec.extraWrite) expandTilde(p, home)];
+  final manifestWritePrefix = [
+    for (final p in spec.extraWritePrefix) expandTilde(p, home),
+  ];
   final violations = ungrantableViolations([
     agentRoot,
     ...manifestRead,
     ...manifestWrite,
   ], home);
-  if (violations.isNotEmpty) {
+  // A prefix grant is ungrantable when it lands ON an E10 root or would
+  // string-prefix-COVER one (~/.ss takes in ~/.ssh) — stricter check.
+  final prefixViolations = ungrantablePrefixViolations(
+    manifestWritePrefix,
+    home,
+  );
+  if (violations.isNotEmpty || prefixViolations.isNotEmpty) {
     throw ConfigException(
       'ungrantable path(s) from manifest "${spec.name}": '
-      '${violations.join(', ')} — ~/.ssh, ~/.gnupg and ~/Library/Keychains '
-      'are never grantable (E10)',
+      '${[...violations, ...prefixViolations].join(', ')} — ~/.ssh, '
+      '~/.gnupg and ~/Library/Keychains are never grantable (E10)',
     );
   }
 
@@ -253,6 +270,7 @@ HarnessRuntime _resolve(
       folderWrite,
       knobs.write,
     ]),
+    extraWritePrefix: manifestWritePrefix,
     runtimeDirs: _runtimeDirsFor(spec.command, cwd: cwd, env: env, io: io),
     services: Set.of(services),
     warnings: List.unmodifiable(knobs.warnings),

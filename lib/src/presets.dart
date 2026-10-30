@@ -43,11 +43,22 @@ final class HarnessPresets {
   };
 
   static const String _claude = '''
-# Claude Code CLI (npm @anthropic-ai/claude-code, node shebang — E5
-# runtime-prefix grants apply). State root ~/.claude (P2); the config
-# FILES ~/.claude.json + ~/.claude.json.backup sit directly under the
-# home directory, so they need explicit extraWrite. CLAUDE_CONFIG_DIR
-# overrides the root.
+# Claude Code CLI (npm @anthropic-ai/claude-code — native Mach-O or node
+# shebang; E5 runtime-prefix grants apply). State root ~/.claude (P2).
+# The config FILE ~/.claude.json sits directly under the home directory
+# and Claude Code persists it atomically with RANDOM siblings
+# (.claude.json.tmp.<rand>, .claude.json.lock, .claude.json.backup) —
+# literals cannot enumerate random suffixes (issue #139), so the grant
+# is the SBPL string-prefix filter: ~/.claude.json itself plus every
+# ~/.claude.json* sibling. It ALSO stages per-user state under literal
+# /tmp paths, ignoring the \$TMPDIR env var: /tmp/claude-<uid>
+# (shell-snapshot prep at startup) and /tmp/cc-socks (unix-socket IPC —
+# binding a socket is a write on its path). Both wedge the TUI when the
+# kernel denies them: an uncaught mkdir EPERM (fresh machines — CI
+# proven) and a silent 100%-CPU spin (socket bind denied — CI proven;
+# owner boxes mask both because unconfined runs leave them behind).
+# Prefix grants cover them for any uid. CLAUDE_CONFIG_DIR overrides the
+# root.
 apiVersion: cube-sandbox/v1
 kind: Harness
 metadata:
@@ -57,24 +68,34 @@ spec:
   command: claude
   agentRoot: ~/.claude
   agentRootEnv: CLAUDE_CONFIG_DIR
-  extraWrite:
+  extraWritePrefix:
     - ~/.claude.json
-    - ~/.claude.json.backup
+    - /tmp/claude
+    - /tmp/cc-socks
   network: open
 ''';
 
   static const String _claudeDesktop = '''
-# Claude Code desktop app — absolute argv, no PATH lookup (P6). State
-# under ~/Library/Application Support/Claude; logs + caches are the
-# starter grant set. ~/Library/Preferences rides cfprefsd IPC, which
-# file-rule SBPL does not confine (E-C4, expected to work).
+# Claude Code desktop app — absolute argv, no PATH lookup (P6).
+# --no-sandbox (issue #140): the app is Electron/Chromium and initializes
+# its OWN inner sandbox in every child process (GPU, network service);
+# macOS denies nested sandbox policy application under an outer seatbelt
+# profile (kernel EPERM), so every child dies and the app fatal-loops
+# (GPU exit 6). --no-sandbox switches off the INNER Chromium sandbox
+# only — the OUTER cube kernel profile remains the single confiner for
+# the whole process tree (E-note; network: open already matches app
+# needs). State under ~/Library/Application Support/Claude; logs +
+# caches are the starter grant set. ~/Library/Preferences rides cfprefsd
+# IPC, which file-rule SBPL does not confine (E-C4, expected to work).
 apiVersion: cube-sandbox/v1
 kind: Harness
 metadata:
   name: claude-desktop
   description: Claude Code desktop app (~/Library/Application Support)
 spec:
-  command: /Applications/Claude.app/Contents/MacOS/Claude
+  command:
+    - /Applications/Claude.app/Contents/MacOS/Claude
+    - --no-sandbox
   agentRoot: ~/Library/Application Support/Claude
   extraWrite:
     - ~/Library/Logs/Claude

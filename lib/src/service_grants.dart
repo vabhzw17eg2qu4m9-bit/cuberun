@@ -126,14 +126,33 @@ const List<String> kUngrantableHomeSuffixes = <String>[
 /// Returns the entries of [paths] that fall inside an ungrantable root
 /// (both macOS spellings checked). Empty list = clean.
 List<String> ungrantableViolations(List<String> paths, String home) {
+  final blocked = _ungrantableRoots(home);
+  return [
+    for (final p in paths)
+      if (blocked.any((b) => p == b || p.startsWith('$b/'))) p,
+  ];
+}
+
+/// The E10 roots, both macOS spellings.
+Set<String> _ungrantableRoots(String home) {
   final blocked = <String>{};
   for (final suffix in kUngrantableHomeSuffixes) {
     final root = '$home/$suffix';
     blocked.addAll(bothSpellingsOf(root));
   }
+  return blocked;
+}
+
+/// Prefix-grant variant (issue #139): a `(prefix ...)` grant covers every
+/// path sharing its string prefix, so it is ungrantable not only when it
+/// IS or is under a blocked root, but when it would COVER one (a
+/// `~/.ss` prefix grant would take in all of `~/.ssh`).
+List<String> ungrantablePrefixViolations(List<String> paths, String home) {
+  final blocked = _ungrantableRoots(home);
   return [
     for (final p in paths)
-      if (blocked.any((b) => p == b || p.startsWith('$b/'))) p,
+      if (blocked.any((b) => p == b || p.startsWith('$b/') || b.startsWith(p)))
+        p,
   ];
 }
 
