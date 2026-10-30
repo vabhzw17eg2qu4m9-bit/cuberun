@@ -130,11 +130,10 @@ expect {
           case 'TZ':
             text += '$tzExtra\n';
           case 'LIB':
-            text +=
-                [
-                  ...bothSpellingsOf('${home.path}/Library'),
-                ].map((p) => '(allow file-read* (subpath "$p"))').join('\n') +
-                '\n';
+            final libLines = [
+              ...bothSpellingsOf('${home.path}/Library'),
+            ].map((p) => '(allow file-read* (subpath "$p"))').join('\n');
+            text += '$libLines\n';
           default:
             text = text
                 .split('\n')
