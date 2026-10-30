@@ -91,7 +91,10 @@ spec:
       expect(e.message, contains('ghost'));
       expect(e.message, contains('$proj/.cube-sandbox/ghost.yaml'));
       expect(e.message, contains('$home/.cube-sandbox/ghost.yaml'));
-      expect(e.message, contains('presets(fa, omp, pi)'));
+      expect(
+        e.message,
+        contains('presets(claude, claude-desktop, fa, omp, pi)'),
+      );
     }
   });
 
@@ -130,7 +133,18 @@ spec:
     File('$home/.cube-sandbox/personal.yaml').writeAsStringSync(body);
     final rows = mk().list();
     final stems = [for (final r in rows) r.stem];
-    expect(stems, containsAll(['fa', 'omp', 'pi', 'local', 'personal']));
+    expect(
+      stems,
+      containsAll([
+        'claude',
+        'claude-desktop',
+        'fa',
+        'omp',
+        'pi',
+        'local',
+        'personal',
+      ]),
+    );
     final local = rows.firstWhere((r) => r.stem == 'local');
     expect(local.source, HarnessSource.project);
     final personal = rows.firstWhere((r) => r.stem == 'personal');

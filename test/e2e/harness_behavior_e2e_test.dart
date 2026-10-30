@@ -7,7 +7,7 @@ import 'package:test/test.dart';
 
 import '../helpers/e2e_helpers.dart' as h;
 
-/// AC15 — in-harness behavioral suite: each harness (pi/omp/fa) is
+/// AC15 — in-harness behavioral suite: each harness (pi/omp/fa/claude) is
 /// launched under its real Layer-0 profile in headless mode and DRIVEN
 /// with a scripted task battery; assertions read TOOL RESULTS (files on
 /// disk, command exit codes, error classes) — never the model's prose.
@@ -17,7 +17,7 @@ import '../helpers/e2e_helpers.dart' as h;
 void main() {
   final hostGuard = h.nestedSandboxDeniedReason();
 
-  for (final harness in ['pi', 'omp', 'fa']) {
+  for (final harness in ['pi', 'omp', 'fa', 'claude']) {
     group('HARNESS-$harness behavioral battery', () {
       if (hostGuard != null) {
         test(
@@ -276,6 +276,7 @@ final class Task {
 
 List<String> headless(String harness, String prompt) => switch (harness) {
   'fa' => ['fa', '-p', prompt],
+  'claude' => ['claude', '-p', prompt],
   _ => [harness, '--no-session', '-p', prompt],
 };
 

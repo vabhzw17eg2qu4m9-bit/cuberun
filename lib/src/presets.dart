@@ -6,11 +6,14 @@ library;
 import 'exceptions.dart';
 import 'harness_manifest.dart';
 
-/// The three launchers that exist on this machine today, each with its
-/// state root (`~/.pi`, `~/.omp`, `~/.fah`).
+/// The launchers with a preset on this machine, each with its state
+/// root (`~/.claude`, `~/Library/Application Support/Claude`, `~/.fah`,
+/// `~/.omp`, `~/.pi`).
 final class HarnessPresets {
-  /// preset id -> manifest yaml text (sorted: fa, omp, pi).
+  /// preset id -> manifest yaml text (sorted).
   static const Map<String, String> manifests = <String, String>{
+    'claude': _claude,
+    'claude-desktop': _claudeDesktop,
     'fa': _fa,
     'omp': _omp,
     'pi': _pi,
@@ -38,6 +41,46 @@ final class HarnessPresets {
   static Map<String, HarnessSpec> loadAll() => {
     for (final id in ids) id: load(id),
   };
+
+  static const String _claude = '''
+# Claude Code CLI (npm @anthropic-ai/claude-code, node shebang — E5
+# runtime-prefix grants apply). State root ~/.claude (P2); the config
+# FILES ~/.claude.json + ~/.claude.json.backup sit directly under the
+# home directory, so they need explicit extraWrite. CLAUDE_CONFIG_DIR
+# overrides the root.
+apiVersion: cube-sandbox/v1
+kind: Harness
+metadata:
+  name: claude
+  description: Claude Code CLI (state root ~/.claude)
+spec:
+  command: claude
+  agentRoot: ~/.claude
+  agentRootEnv: CLAUDE_CONFIG_DIR
+  extraWrite:
+    - ~/.claude.json
+    - ~/.claude.json.backup
+  network: open
+''';
+
+  static const String _claudeDesktop = '''
+# Claude Code desktop app — absolute argv, no PATH lookup (P6). State
+# under ~/Library/Application Support/Claude; logs + caches are the
+# starter grant set. ~/Library/Preferences rides cfprefsd IPC, which
+# file-rule SBPL does not confine (E-C4, expected to work).
+apiVersion: cube-sandbox/v1
+kind: Harness
+metadata:
+  name: claude-desktop
+  description: Claude Code desktop app (~/Library/Application Support)
+spec:
+  command: /Applications/Claude.app/Contents/MacOS/Claude
+  agentRoot: ~/Library/Application Support/Claude
+  extraWrite:
+    - ~/Library/Logs/Claude
+    - ~/Library/Caches/com.anthropic.claude
+  network: open
+''';
 
   static const String _fa = '''
 # fa coding agent — state root ~/.fah (no agentRootEnv upstream yet).

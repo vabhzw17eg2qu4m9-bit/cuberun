@@ -57,7 +57,8 @@ parser is the law. Full reference: `docs/config.md` in the cube-sandbox repo.
 
 ## Workflow
 
-1. **Locate.** `cube-sandbox list` — presets (`fa`, `omp`, `pi`) plus
+1. **Locate.** `cube-sandbox list` — presets (`claude`, `claude-desktop`,
+   `fa`, `omp`, `pi`) plus
    project `.cube-sandbox/<name>.yaml` and user `~/.cube-sandbox/<name>.yaml`.
    Resolution precedence: `--yaml` (inline/stdin) > `--file` >
    project > user > preset. The filename stem is the profile id.

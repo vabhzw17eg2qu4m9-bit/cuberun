@@ -41,7 +41,7 @@ Notes:
   conflicts.
 - A total miss fails loudly, listing every location searched and the
   preset ids:
-  `profile 'x' not found — looked: --file (none), <cwd>/.cube-sandbox/x.yaml, ~/.cube-sandbox/x.yaml, presets(fa, omp, pi)`.
+  `profile 'x' not found — looked: --file (none), <cwd>/.cube-sandbox/x.yaml, ~/.cube-sandbox/x.yaml, presets(claude, claude-desktop, fa, omp, pi)`.
 - `cube-sandbox list` enumerates presets + project + user files with source
   labels; a file that does not parse lists as
   `<parse error — run to see diagnostic>` and fails loudly when launched.
