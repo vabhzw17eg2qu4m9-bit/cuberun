@@ -30,6 +30,17 @@ import 'package:test/test.dart';
 /// - A+B boot, C spins => our preset's READ denies (/Users,
 ///   /private/var blanket) starve some boot path (~/Library prefs,
 ///   /private/var/db/timezone…) — grant read candidates.
+String? hGuard() {
+  if (!Platform.isMacOS) return 'macOS only (SBPL kernel backend)';
+  if (!Platform.version.contains('arm64')) {
+    return 'arm64 macOS only (claude-code-darwin-arm64 package)';
+  }
+  if (!File('/usr/bin/expect').existsSync()) {
+    return '/usr/bin/expect not available (pty driver)';
+  }
+  return null;
+}
+
 void main() {
   String installNativeClaude(Directory into) {
     into.createSync(recursive: true);
@@ -58,17 +69,6 @@ void main() {
   }
 
   final skipKernel = hGuard();
-
-  String? hGuard() {
-    if (!Platform.isMacOS) return 'macOS only (SBPL kernel backend)';
-    if (!Platform.version.contains('arm64')) {
-      return 'arm64 macOS only (claude-code-darwin-arm64 package)';
-    }
-    if (!File('/usr/bin/expect').existsSync()) {
-      return '/usr/bin/expect not available (pty driver)';
-    }
-    return null;
-  }
 
   test(
     'issue #139 bisect: A bare / B write-family / C preset profile',
