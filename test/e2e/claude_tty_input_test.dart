@@ -139,6 +139,7 @@ expect {
         catch {exec ps -o pid,ppid,stat,etime,command -p $pid}
         catch {exec /bin/sh -c "sample $pid 2 2>/dev/null | sed -n '1,45p'"}
         catch {exec /bin/sh -c "lsof -p $pid 2>/dev/null | head -30"}
+        catch {exec /bin/sh -c "ls -la /tmp/ /private/tmp/ /tmp/claude-501 2>/dev/null | head -25"}
         catch {exec kill -9 $pid}
         exit 4
     }
@@ -192,10 +193,10 @@ exit 0
         '${DateTime.now().millisecondsSinceEpoch}.log',
       );
       driverOut.writeAsStringSync(r.stdout);
-      final driverTail = () {
+      String driverTail() {
         final t = r.stdout;
         return t.length <= 5000 ? t : '...${t.substring(t.length - 5000)}';
-      };
+      }
 
       expect(
         r.exitCode,
