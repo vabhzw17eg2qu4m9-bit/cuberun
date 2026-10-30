@@ -91,11 +91,11 @@ void main() {
     // semantics for the same facts turns this red. #140 note: the
     // claude-desktop --no-sandbox argv is NOT a profile input — its
     // key10 is unchanged by the fix.
-    expect(claude.key10, '793399aacb');
-    expect(claudeDesktop.key10, '46d20a8ae9');
-    expect(fa.key10, 'e8ee06804e');
-    expect(omp.key10, 'a969c70e85');
-    expect(pi.key10, 'c3f35f98a1');
+    expect(claude.key10, '3644a240ab');
+    expect(claudeDesktop.key10, '32c1ae00af');
+    expect(fa.key10, '43ed537405');
+    expect(omp.key10, 'b557bf6d4e');
+    expect(pi.key10, '6adeab7f88');
   });
 
   test('identical facts => identical text, always', () {
@@ -169,6 +169,10 @@ void main() {
         expect(
           text,
           contains('(allow file-read* (subpath "/private/var/run"))'),
+        );
+        expect(
+          text,
+          contains('(allow file-read* (subpath "/private/var/db/timezone"))'),
         );
       });
 

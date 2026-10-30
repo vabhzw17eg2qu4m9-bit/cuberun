@@ -39,9 +39,15 @@ const List<String> kReadDenyRoots = <String>[
 ];
 
 /// Re-allows under the deny roots that the system needs to function.
+/// /var/db/timezone (both spellings via the emit loop) is ICU/libc
+/// tzset data: a static-init read that, when denied, sends some
+/// runtimes (Bun/JIT — measured with claude 2.1.314) into a silent
+/// 100%-CPU trap/handler retry loop BEFORE main (issue #139 bisect:
+/// C spins, C+tz boots).
 const List<String> kReadSystemReallows = <String>[
   '/private/var/db/dyld', // dyld shared cache — exec of system binaries
   '/private/var/run', // resolv.conf symlink target + mDNSResponder socket
+  '/var/db/timezone', // tz database — ICU/libc tzset at static init
 ];
 
 enum _Verb { allow, deny }

@@ -212,6 +212,10 @@ void main() {
       contains('(allow file-read* (subpath "/private/var/db/dyld"))'),
     );
     expect(text, contains('(allow file-read* (subpath "/private/var/run"))'));
+    expect(
+      text,
+      contains('(allow file-read* (subpath "/private/var/db/timezone"))'),
+    );
   });
 
   test('read grants re-allowed with both spellings; rw grants read too', () {
