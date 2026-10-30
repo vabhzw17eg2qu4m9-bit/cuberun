@@ -144,6 +144,7 @@ expect {
         # the whole tree instead of probing the one pid.
         catch {puts "WAIT-NOWAIT: [wait -nowait]"}
         catch {puts [exec /bin/sh -c {ps -ef | grep -Ei 'claude|sandbox-exec' | grep -v grep | head -15}]}
+        catch {puts [exec /bin/sh -c {sample [exp_pid] 2 2>/dev/null | sed -n '1,70p'}]}
         catch {puts [exec /bin/sh -c {ls -la /tmp/ /private/tmp/ 2>/dev/null | head -20}]}
         catch {exec kill -9 [exp_pid]}
         exit 4
