@@ -135,12 +135,13 @@ send "hellotest123"
 expect {
     timeout {
         puts "\nMARKER-TIMEOUT: TUI stopped consuming keyboard input (issue #139 symptom)"
-        set pid [exp_pid]
-        catch {exec ps -o pid,ppid,stat,etime,command -p $pid}
-        catch {exec /bin/sh -c "sample $pid 2 2>/dev/null | sed -n '1,45p'"}
-        catch {exec /bin/sh -c "lsof -p $pid 2>/dev/null | head -30"}
-        catch {exec /bin/sh -c "ls -la /tmp/ /private/tmp/ /tmp/claude-501 2>/dev/null | head -25"}
-        catch {exec kill -9 $pid}
+        # claude may have EXITED silently while an orphan child holds the
+        # pty (no EOF, ps -p <pid> empty) — reap its status and snapshot
+        # the whole tree instead of probing the one pid.
+        catch {puts "WAIT-NOWAIT: [wait -nowait]"}
+        catch {puts [exec /bin/sh -c {ps -ef | grep -Ei 'claude|sandbox-exec' | grep -v grep | head -15}]}
+        catch {puts [exec /bin/sh -c {ls -la /tmp/ /private/tmp/ 2>/dev/null | head -20}]}
+        catch {exec kill -9 [exp_pid]}
         exit 4
     }
     eof { puts "\nMARKER-EOF: claude died while typing"; exit 4 }
