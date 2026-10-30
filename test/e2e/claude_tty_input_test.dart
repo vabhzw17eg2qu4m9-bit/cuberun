@@ -114,10 +114,12 @@ catch {exec stty -echo < $spawn_out(slave,name)}
 
 expect {
     timeout { puts "\nBOOT-TIMEOUT: claude TUI never produced output"
+              catch {exec ps -o pid,ppid,stat,etime,command -p [exp_pid]}
               catch {exec kill -9 [exp_pid]}; exit 5 }
     eof { puts "\nBOOT-EOF: claude exited during boot"; exit 5 }
     -re {.}
 }
+puts "\nBOOT-ALIVE pid=[exp_pid]"
 
 # Onboarding: three spaced Enters (theme -> trust -> whatever follows).
 sleep 3
@@ -131,8 +133,15 @@ send "\r"
 sleep 3
 send "hellotest123"
 expect {
-    timeout { puts "\nMARKER-TIMEOUT: TUI stopped consuming keyboard input (issue #139 symptom)"
-              catch {exec kill -9 [exp_pid]}; exit 4 }
+    timeout {
+        puts "\nMARKER-TIMEOUT: TUI stopped consuming keyboard input (issue #139 symptom)"
+        set pid [exp_pid]
+        catch {exec ps -o pid,ppid,stat,etime,command -p $pid}
+        catch {exec /bin/sh -c "sample $pid 2 2>/dev/null | sed -n '1,45p'"}
+        catch {exec /bin/sh -c "lsof -p $pid 2>/dev/null | head -30"}
+        catch {exec kill -9 $pid}
+        exit 4
+    }
     eof { puts "\nMARKER-EOF: claude died while typing"; exit 4 }
     -re {h.*e.*l.*l.*o.*t.*e.*s.*t.*1.*2.*3} {}
 }
