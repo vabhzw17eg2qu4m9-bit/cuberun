@@ -101,11 +101,16 @@ void main() {
       final script = File('${tmp.path}/drive.exp');
       script.writeAsStringSync(r'''
 #!/usr/bin/expect -f
-# Drives `cube-sandbox launch claude` on a pty (issue #139): onboarding
-# Enters -> type the marker -> the marker must be DRAWN by the TUI.
+# Drives claude on a pty (issue #139). CTRL=1: spawn the binary DIRECTLY
+# (unconfined control — isolates driver/environment from the sandbox);
+# default: spawn `cube-sandbox launch claude`.
 set timeout 90
 log_file $env(TTY_LOG)
-spawn $env(CUBE_BIN) launch claude
+if {[info exists env(CTRL)]} {
+    spawn $env(CLAUDE_BIN)
+} else {
+    spawn $env(CUBE_BIN) launch claude
+}
 
 # Kill tty echo: from here the ONLY way the marker can appear in the
 # transcript is the TUI itself drawing it — a wedged-but-echoing pty
@@ -165,6 +170,39 @@ catch {exec kill -9 $pid}
 sleep 1
 exit 0
 ''');
+
+      // CONTROL LEG — claude UNCONFINED under the same driver, fresh
+      // HOME, same pty. If even this cannot render a frame, the host
+      // cannot drive the claude TUI at all and the confined verdict
+      // would be meaningless: skip loudly, never silently green.
+      final controlLog = '${tmp.path}/control.log';
+      final control = await Process.run(
+        '/usr/bin/expect',
+        [script.path],
+        workingDirectory: proj.path,
+        environment: {
+          'PATH': '$claudeDir:/usr/bin:/bin:/usr/sbin:/sbin',
+          'HOME': home.path,
+          'TERM': 'xterm-256color',
+          'COLUMNS': '120',
+          'LINES': '40',
+          'ANTHROPIC_API_KEY': 'sk-ant-dummy-claude-tty-e2e',
+          'CLAUDE_BIN': '$claudeDir/claude',
+          'CTRL': '1',
+          'TTY_LOG': controlLog,
+        },
+      );
+      if (control.exitCode != 0) {
+        final ctrlTail = File(controlLog).existsSync()
+            ? stripAnsi(transcriptTail(controlLog))
+            : '(no control transcript)';
+        markTestSkipped(
+          'claude TUI cannot render even UNCONFINED under this driver on '
+          'this host (fresh HOME + expect pty) — environmental, not '
+          'sandbox-attributable; owner validates live. Control transcript '
+          'tail:\n$ctrlTail',
+        );
+      }
 
       final r = await Process.run(
         '/usr/bin/expect',
