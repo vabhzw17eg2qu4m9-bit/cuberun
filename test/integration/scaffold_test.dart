@@ -84,4 +84,34 @@ void main() {
       throwsA(isA<ConfigException>()),
     );
   });
+
+  test('IT: claude/claude-desktop shapes scaffold + round-trip (AC-C1/C8)', () {
+    // The desktop preset's shape is the schema's edge: absolute argv and
+    // an agentRoot containing a space must survive the round-trip.
+    final desktop = scaffoldProfile(
+      name: 'claude-desktop',
+      command: '/Applications/Claude.app/Contents/MacOS/Claude',
+      agentRoot: '~/Library/Application Support/Claude',
+      projectDir: proj,
+    );
+    final dSpec = HarnessSpec.fromYamlText(
+      File(desktop).readAsStringSync(),
+      sourcePath: desktop,
+    );
+    expect(dSpec.command, ['/Applications/Claude.app/Contents/MacOS/Claude']);
+    expect(dSpec.agentRoot, '~/Library/Application Support/Claude');
+
+    final cli = scaffoldProfile(
+      name: 'claude',
+      command: 'claude',
+      agentRoot: '~/.claude',
+      projectDir: proj,
+    );
+    final cSpec = HarnessSpec.fromYamlText(
+      File(cli).readAsStringSync(),
+      sourcePath: cli,
+    );
+    expect(cSpec.command, ['claude']);
+    expect(cSpec.agentRoot, '~/.claude');
+  });
 }

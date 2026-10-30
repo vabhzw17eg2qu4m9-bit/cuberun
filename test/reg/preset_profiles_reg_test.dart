@@ -3,49 +3,126 @@ import 'package:cube_sandbox/src/runtime.dart';
 import 'package:cube_sandbox/src/sbpl.dart';
 import 'package:test/test.dart';
 
-/// REG — the SBPL text of all three presets is asserted against pinned
+/// REG — the SBPL text of all five presets is asserted against pinned
 /// expectations (deny roots, metadata re-allows, grant lines, key10):
 /// a diff in preset confinement is a RED build even when all behavior
 /// tests stay green.
 void main() {
   // FIXED machine facts => deterministic profiles => pinnable keys.
-  HarnessRuntime fixed(String agentRoot, {List<String> extraRead = const []}) =>
-      HarnessRuntime(
-        projDir: '/Users/dev/proj',
-        agentRoot: agentRoot,
-        tmp: '/private/var/folders/ab/T123',
-        extraRead: extraRead,
-        extraWrite: const [],
-        runtimeDirs: const [],
-      );
+  HarnessRuntime fixed(
+    String agentRoot, {
+    List<String> extraRead = const [],
+    List<String> extraWrite = const [],
+  }) => HarnessRuntime(
+    projDir: '/Users/dev/proj',
+    agentRoot: agentRoot,
+    tmp: '/private/var/folders/ab/T123',
+    extraRead: extraRead,
+    extraWrite: extraWrite,
+    runtimeDirs: const [],
+  );
 
-  final fa = emitProfile(fixed('/Users/dev/.fah'));
-  final omp = emitProfile(fixed('/Users/dev/.omp'));
-  final pi = emitProfile(fixed('/Users/dev/.pi'));
+  final runtimes = <String, HarnessRuntime>{
+    'claude': fixed(
+      '/Users/dev/.claude',
+      extraWrite: const [
+        '/Users/dev/.claude.json',
+        '/Users/dev/.claude.json.backup',
+      ],
+    ),
+    'claude-desktop': fixed(
+      '/Users/dev/Library/Application Support/Claude',
+      extraWrite: const [
+        '/Users/dev/Library/Logs/Claude',
+        '/Users/dev/Library/Caches/com.anthropic.claude',
+      ],
+    ),
+    'fa': fixed('/Users/dev/.fah'),
+    'omp': fixed('/Users/dev/.omp'),
+    'pi': fixed('/Users/dev/.pi'),
+  };
+  final profiles = <String, SbplProfile>{
+    for (final e in runtimes.entries) e.key: emitProfile(e.value),
+  };
 
-  test('all three presets parse and emit', () {
-    expect(HarnessPresets.ids, ['fa', 'omp', 'pi']);
+  final claude = profiles['claude']!;
+  final claudeDesktop = profiles['claude-desktop']!;
+  final fa = profiles['fa']!;
+  final omp = profiles['omp']!;
+  final pi = profiles['pi']!;
+
+  test('all five presets parse and emit', () {
+    expect(HarnessPresets.ids, ['claude', 'claude-desktop', 'fa', 'omp', 'pi']);
+    expect(claude.text.isNotEmpty, isTrue);
+    expect(claudeDesktop.text.isNotEmpty, isTrue);
     expect(fa.text.isNotEmpty, isTrue);
     expect(omp.text.isNotEmpty, isTrue);
     expect(pi.text.isNotEmpty, isTrue);
   });
 
+  test('AC-C5: preset catalog + per-preset grant lists pinned', () {
+    // Format: id|command|agentRoot|agentRootEnv|extraWrite, in id order.
+    final pins = [
+      'claude|claude|~/.claude|CLAUDE_CONFIG_DIR|'
+          '~/.claude.json,~/.claude.json.backup',
+      'claude-desktop|/Applications/Claude.app/Contents/MacOS/Claude|'
+          '~/Library/Application Support/Claude||'
+          '~/Library/Logs/Claude,~/Library/Caches/com.anthropic.claude',
+      'fa|fa|~/.fah||',
+      'omp|omp|~/.omp|OMP_AGENT_DIR|',
+      'pi|pi|~/.pi/agent|PI_CODING_AGENT_DIR|',
+    ];
+    final actual = [
+      for (final e in HarnessPresets.loadAll().entries)
+        '${e.key}|${e.value.command.first}|${e.value.agentRoot}'
+            '|${e.value.agentRootEnv ?? ''}|${e.value.extraWrite.join(',')}',
+    ];
+    expect(actual, pins);
+  });
+
   test('key10 pins (confinement drift detector)', () {
     // These literals ARE the regression pins: any change to profile
     // semantics for the same facts turns this red.
+    expect(claude.key10, '1557757dc9');
+    expect(claudeDesktop.key10, '46d20a8ae9');
     expect(fa.key10, 'e8ee06804e');
     expect(omp.key10, 'a969c70e85');
     expect(pi.key10, 'c3f35f98a1');
   });
 
   test('identical facts => identical text, always', () {
+    expect(
+      emitProfile(
+        fixed(
+          '/Users/dev/.claude',
+          extraWrite: const [
+            '/Users/dev/.claude.json',
+            '/Users/dev/.claude.json.backup',
+          ],
+        ),
+      ).text,
+      claude.text,
+    );
+    expect(
+      emitProfile(
+        fixed(
+          '/Users/dev/Library/Application Support/Claude',
+          extraWrite: const [
+            '/Users/dev/Library/Logs/Claude',
+            '/Users/dev/Library/Caches/com.anthropic.claude',
+          ],
+        ),
+      ).text,
+      claudeDesktop.text,
+    );
     expect(emitProfile(fixed('/Users/dev/.fah')).text, fa.text);
     expect(emitProfile(fixed('/Users/dev/.omp')).text, omp.text);
     expect(emitProfile(fixed('/Users/dev/.pi')).text, pi.text);
   });
 
-  for (final entry in {'fa': fa, 'omp': omp, 'pi': pi}.entries) {
+  for (final entry in profiles.entries) {
     group('REG structural pins: ${entry.key}', () {
+      final rt = runtimes[entry.key]!;
       final text = entry.value.text;
 
       test('header pinned (version/default/open network)', () {
@@ -100,15 +177,16 @@ void main() {
             '(allow file-write* (subpath "/private/var/folders/ab/T123"))',
           ),
         );
+        final ownWrites = [
+          '/dev/',
+          '/Users/dev/proj',
+          '/private/var/folders/ab/T123',
+          ...rt.extraWrite,
+        ];
         final foreignWriteAllows = text
             .split('\n')
             .where((l) => l.startsWith('(allow file-write*'))
-            .where(
-              (l) =>
-                  !l.contains('/dev/') &&
-                  !l.contains('/Users/dev/proj') &&
-                  !l.contains('/private/var/folders/ab/T123'),
-            );
+            .where((l) => !ownWrites.any(l.contains));
         expect(
           foreignWriteAllows,
           isEmpty,

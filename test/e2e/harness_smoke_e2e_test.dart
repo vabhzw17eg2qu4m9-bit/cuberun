@@ -7,9 +7,10 @@ import 'package:test/test.dart';
 
 import '../helpers/e2e_helpers.dart' as h;
 
-/// AC13 — harness launch: `pi`, `omp` and `fa` each start under their own
-/// Layer-0 profile and complete a trivial headless run answering OK, with
-/// stderr free of sandbox denials (deprecation warning tolerated, E3).
+/// AC13 — harness launch: `pi`, `omp`, `fa` and `claude` each start under
+/// their own Layer-0 profile and complete a trivial headless run answering
+/// OK, with stderr free of sandbox denials (deprecation warning tolerated,
+/// E3).
 /// Skips with an explicit reason when the harness binary or provider env
 /// is absent — NEVER silently green.
 void main() {
@@ -25,11 +26,12 @@ void main() {
     }
     return switch (harness) {
       'fa' => ['fa', '-p', prompt],
+      'claude' => ['claude', '-p', prompt],
       _ => [harness, '--no-session', '-p', prompt],
     };
   }
 
-  for (final harness in ['pi', 'omp', 'fa']) {
+  for (final harness in ['pi', 'omp', 'fa', 'claude']) {
     test(
       '$harness: headless run under its profile answers OK',
       () {
