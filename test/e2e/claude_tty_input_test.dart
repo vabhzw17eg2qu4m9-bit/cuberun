@@ -111,6 +111,10 @@ spawn $env(CUBE_BIN) launch claude
 # transcript is the TUI itself drawing it — a wedged-but-echoing pty
 # cannot fake input flow.
 catch {exec stty -echo < $spawn_out(slave,name)}
+# Give the pty a real geometry: a 0x0 window sends TUI renderers
+# (Ink/React) into a silent 100%-CPU layout loop — measured on CI as
+# claude alive at ~75% CPU with no frame drawn.
+catch {exec stty rows 40 columns 120 < $spawn_out(slave,name)}
 
 expect {
     timeout { puts "\nBOOT-TIMEOUT: claude TUI never produced output"
@@ -171,6 +175,8 @@ exit 0
           'PATH': '$claudeDir:/usr/bin:/bin:/usr/sbin:/sbin',
           'HOME': home.path,
           'TERM': 'xterm-256color',
+          'COLUMNS': '120',
+          'LINES': '40',
           'ANTHROPIC_API_KEY': 'sk-ant-dummy-claude-tty-e2e',
           'CUBE_BIN': h.ensureBinary(),
           'TTY_LOG': logPath,
