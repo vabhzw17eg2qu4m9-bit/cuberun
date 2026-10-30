@@ -27,7 +27,7 @@ void main() {
   final runtimes = <String, HarnessRuntime>{
     'claude': fixed(
       '/Users/dev/.claude',
-      extraWritePrefix: const ['/Users/dev/.claude.json'],
+      extraWritePrefix: const ['/Users/dev/.claude.json', '/tmp/claude'],
     ),
     'claude-desktop': fixed(
       '/Users/dev/Library/Application Support/Claude',
@@ -65,7 +65,7 @@ void main() {
     // (command.first pins argv0; the --no-sandbox tail is a UT pin).
     final pins = [
       'claude|claude|~/.claude|CLAUDE_CONFIG_DIR||'
-          '~/.claude.json',
+          '~/.claude.json,/tmp/claude',
       'claude-desktop|/Applications/Claude.app/Contents/MacOS/Claude|'
           '~/Library/Application Support/Claude||'
           '~/Library/Logs/Claude,~/Library/Caches/com.anthropic.claude|',
@@ -87,7 +87,7 @@ void main() {
     // semantics for the same facts turns this red. #140 note: the
     // claude-desktop --no-sandbox argv is NOT a profile input — its
     // key10 is unchanged by the fix.
-    expect(claude.key10, 'b5cf00da3c');
+    expect(claude.key10, '608dce5e38');
     expect(claudeDesktop.key10, '46d20a8ae9');
     expect(fa.key10, 'e8ee06804e');
     expect(omp.key10, 'a969c70e85');
@@ -99,7 +99,7 @@ void main() {
       emitProfile(
         fixed(
           '/Users/dev/.claude',
-          extraWritePrefix: const ['/Users/dev/.claude.json'],
+          extraWritePrefix: const ['/Users/dev/.claude.json', '/tmp/claude'],
         ),
       ).text,
       claude.text,
@@ -223,5 +223,18 @@ void main() {
     // The old literal for the .backup sibling is gone — covered by the
     // prefix (its string-prefix sibling family), never a separate rule.
     expect(claude.text, isNot(contains('.claude.json.backup')));
+  });
+
+  test('REG: claude grants the /tmp/claude-<uid> staging family '
+      '(fresh-box startup, CI-proven)', () {
+    // Claude Code mkdirs the literal /tmp/claude-<uid> at startup and
+    // wedges with an uncaught EPERM when it does not exist — the prefix
+    // grant covers any uid, both kernel spellings.
+    expect(claude.text, contains('(allow file-write* (prefix "/tmp/claude"))'));
+    expect(claude.text, contains('(allow file-read* (prefix "/tmp/claude"))'));
+    expect(
+      claude.text,
+      contains('(allow file-read* (prefix "/private/tmp/claude"))'),
+    );
   });
 }

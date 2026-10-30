@@ -108,7 +108,8 @@ Strict parse: any unknown key at any level fails naming the YAML path.
 Resolution: `--file` > `<cwd>/.cube-sandbox/<name>.yaml` > `~/.cube-sandbox/` >
 preset. Built-in presets: `claude` (`~/.claude`, `CLAUDE_CONFIG_DIR`
 override, `(prefix ~/.claude.json)` covering the config file plus its
-atomic-write siblings), `claude-desktop`
+atomic-write siblings, plus `(prefix /tmp/claude)` for the per-uid
+staging dir it mkdirs at startup), `claude-desktop`
 (Claude.app argv with `--no-sandbox`, `~/Library/Application Support/Claude`,
 logs + caches), `fa` (`~/.fah`), `omp` (`~/.omp`), `pi` (`~/.pi`,
 widened) — parsed by the same parser as user files.

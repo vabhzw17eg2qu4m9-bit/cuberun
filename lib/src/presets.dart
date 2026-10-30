@@ -50,7 +50,14 @@ final class HarnessPresets {
 # (.claude.json.tmp.<rand>, .claude.json.lock, .claude.json.backup) —
 # literals cannot enumerate random suffixes (issue #139), so the grant
 # is the SBPL string-prefix filter: ~/.claude.json itself plus every
-# ~/.claude.json* sibling. CLAUDE_CONFIG_DIR overrides the root.
+# ~/.claude.json* sibling. It ALSO stages per-user work under the
+# literal /tmp/claude-<uid> (shell-snapshot prep at startup, the
+# \$TMPDIR env var ignored) — a fresh machine without that dir wedges
+# the TUI with an
+# uncaught mkdir EPERM before the first dialog (CI-proven), so the
+# second prefix grant covers /tmp/claude* for any uid. On an owner box
+# the dir pre-exists from unconfined runs, which is why only the config
+# persist wedge was visible there. CLAUDE_CONFIG_DIR overrides the root.
 apiVersion: cube-sandbox/v1
 kind: Harness
 metadata:
@@ -62,6 +69,7 @@ spec:
   agentRootEnv: CLAUDE_CONFIG_DIR
   extraWritePrefix:
     - ~/.claude.json
+    - /tmp/claude
   network: open
 ''';
 
