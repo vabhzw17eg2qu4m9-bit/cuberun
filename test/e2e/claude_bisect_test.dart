@@ -31,8 +31,6 @@ import 'package:test/test.dart';
 ///   /private/var blanket) starve some boot path (~/Library prefs,
 ///   /private/var/db/timezone…) — grant read candidates.
 void main() {
-  final skipKernel = hGuard();
-
   String installNativeClaude(Directory into) {
     into.createSync(recursive: true);
     final meta = Process.runSync('curl', [
@@ -58,6 +56,8 @@ void main() {
     Process.runSync('chmod', ['+x', bin.path]);
     return bin.parent.path;
   }
+
+  final skipKernel = hGuard();
 
   String? hGuard() {
     if (!Platform.isMacOS) return 'macOS only (SBPL kernel backend)';
