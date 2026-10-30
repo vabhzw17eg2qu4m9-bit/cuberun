@@ -153,10 +153,11 @@ expect {
         # the pty (no EOF) — reap its status and snapshot the tree,
         # the socket state, and a stack sample of the live pid.
         catch {puts "WAIT-NOWAIT: [wait -nowait]"}
-        catch {puts [exec /bin/sh -c {ps -ef | grep -Ei 'claude|sandbox-exec' | grep -v grep | head -15}]}
-        catch {puts [exec /bin/sh -c {lsof -U -p [exp_pid] 2>/dev/null | head -20}]}
-        catch {puts [exec /bin/sh -c {sample [exp_pid] 2 2>/dev/null | sed -n '1,70p'}]}
-        catch {puts [exec /bin/sh -c {ls -la /tmp/ /private/tmp/ 2>/dev/null | head -20}]}
+        set pid [exp_pid]
+        catch {puts [exec /bin/sh -c "ps -ef | grep -Ei 'claude|sandbox-exec' | grep -v grep | head -15"]}
+        catch {puts [exec /bin/sh -c "lsof -U -p $pid 2>/dev/null | head -25"]}
+        catch {puts [exec /bin/sh -c "sample $pid 2 2>/dev/null | sed -n '1,70p'"]}
+        catch {puts [exec /bin/sh -c "ls -la /tmp/ /private/tmp/ 2>/dev/null | head -20"]}
         catch {exec kill -9 [exp_pid]}
         exit 4
     }
