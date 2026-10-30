@@ -102,10 +102,15 @@ void main() {
       script.writeAsStringSync(r'''
 #!/usr/bin/expect -f
 # Drives `cube-sandbox launch claude` on a pty (issue #139): onboarding
-# Enters -> type the marker -> the marker must echo back.
+# Enters -> type the marker -> the marker must be DRAWN by the TUI.
 set timeout 90
 log_file $env(TTY_LOG)
 spawn $env(CUBE_BIN) launch claude
+
+# Kill tty echo: from here the ONLY way the marker can appear in the
+# transcript is the TUI itself drawing it — a wedged-but-echoing pty
+# cannot fake input flow.
+catch {exec stty -echo < $spawn_out(slave,name)}
 
 expect {
     timeout { puts "\nBOOT-TIMEOUT: claude TUI never produced output"
@@ -122,7 +127,7 @@ send "\r"
 sleep 4
 send "\r"
 
-# Main chat UI: type the marker; a LIVE input path echoes it back.
+# Main chat UI: type the marker; a LIVE input path draws it back.
 sleep 3
 send "hellotest123"
 expect {
@@ -160,12 +165,23 @@ exit 0
           'TTY_LOG': logPath,
         },
       );
+
+      // The transcript rides the CI harness-artifacts archive (and the
+      // failure reasons below) — every red/green verdict is inspectable.
+      final artifactDir = 'build/harness-artifacts';
+      Directory(artifactDir).createSync(recursive: true);
+      final kept =
+          '$artifactDir/claude-tty-'
+          '${DateTime.now().millisecondsSinceEpoch}.log';
+      if (File(logPath).existsSync()) File(logPath).copySync(kept);
+      String cleanTail() => stripAnsi(transcriptTail(logPath));
+
       expect(
         r.exitCode,
         0,
         reason:
             'expect protocol failed (exit ${r.exitCode}): '
-            '${r.stderr}\ntranscript tail:\n${transcriptTail(logPath)}',
+            '${r.stderr}\ntranscript tail:\n${cleanTail()}',
       );
 
       final transcript = stripAnsi(File(logPath).readAsStringSync());
@@ -174,9 +190,10 @@ exit 0
         contains('hellotest123'),
         reason:
             'the typed marker never echoed back — TUI input path is '
-            'dead (issue #139). Transcript tail:\n'
-            '${transcriptTail(logPath)}',
+            'dead (issue #139). Transcript tail:\n${cleanTail()}',
       );
+      // ignore: avoid_print
+      print('claude TUI transcript archived at $kept; tail:\n${cleanTail()}');
     },
     skip: skipKernel ?? hostReason() ?? false,
     timeout: const Timeout(Duration(minutes: 5)),
