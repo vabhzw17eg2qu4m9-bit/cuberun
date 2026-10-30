@@ -112,7 +112,11 @@ List<_Rule> _writeRules(HarnessRuntime runtime) => <_Rule>[
   _Rule(_Verb.allow, _Kind.subpath, runtime.agentRoot),
   _Rule(_Verb.allow, _Kind.subpath, runtime.tmp),
   for (final p in runtime.extraWrite) _Rule(_Verb.allow, _Kind.subpath, p),
-  for (final p in runtime.extraWritePrefix) _Rule(_Verb.allow, _Kind.prefix, p),
+  // Prefix grants emit BOTH macOS spellings (E2): /tmp, /var and /Users
+  // resolve under /private for the kernel, and a single-spelling prefix
+  // silently misses the resolved path (issue #139 /tmp/claude-<uid>).
+  for (final p in runtime.extraWritePrefix)
+    for (final sp in bothSpellingsOf(p)) _Rule(_Verb.allow, _Kind.prefix, sp),
 ];
 
 /// Read denies over the curated user-data roots, both spellings, with

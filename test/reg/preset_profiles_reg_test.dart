@@ -87,7 +87,7 @@ void main() {
     // semantics for the same facts turns this red. #140 note: the
     // claude-desktop --no-sandbox argv is NOT a profile input — its
     // key10 is unchanged by the fix.
-    expect(claude.key10, '608dce5e38');
+    expect(claude.key10, 'f18b73d9cc');
     expect(claudeDesktop.key10, '46d20a8ae9');
     expect(fa.key10, 'e8ee06804e');
     expect(omp.key10, 'a969c70e85');
