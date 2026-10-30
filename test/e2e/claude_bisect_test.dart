@@ -10,7 +10,7 @@ import 'package:cube_sandbox/src/service_grants.dart';
 import 'package:cube_sandbox/src/sbpl.dart';
 import 'package:test/test.dart';
 
-/// Issue #139 bisect (chief-directed, one decisive CI cycle): drive the
+/// Issue #139 bisect round 2 (read-candidates): drive the
 /// SAME claude binary under THREE hand-written profiles and classify
 /// boot vs silent spin — claude 2.1.314 spins ~100% CPU in dyld/start
 /// frames (signal storm in JIT code) under the preset on CI runners
@@ -104,36 +104,46 @@ expect {
 }
 ''');
 
-      // Profile per leg, each with a FRESH HOME (fair first-boot state).
+      // Read-candidate bisect (round 2): A=BOOT B=BOOT C=SPIN is read —
+      // add candidate READ grants to the preset profile, freshest HOME
+      // per leg.
+      final tzExtra = [
+        '(allow file-read* (subpath "/var/db/timezone"))',
+        '(allow file-read* (subpath "/private/var/db/timezone"))',
+        '(allow file-read* (literal "/etc/localtime"))',
+      ].join('\n');
       final matrix = <String>[];
-      final verdicts = <String, String>{};
-      for (final leg in ['A', 'B', 'C']) {
+      for (final leg in ['TZ', 'LIB', 'USERS']) {
         final home = Directory('${tmp.path}/home-$leg')..createSync();
         Directory('${tmp.path}/proj-$leg').createSync();
-        String text;
+        final tmpReal = Directory.systemTemp.resolveSymbolicLinksSync();
+        var text = emitProfile(
+          resolveRuntime(
+            HarnessPresets.load('claude'),
+            services: const {},
+            cwd: '${tmp.path}/proj-$leg',
+            home: home.path,
+            env: {'HOME': home.path, 'TMPDIR': tmpReal},
+          ),
+        ).text;
         switch (leg) {
-          case 'A':
-            text = '(version 1)\n(allow default)\n';
-          case 'B':
-            final bothHome = bothSpellingsOf(home.path);
-            final tmpReal = Directory.systemTemp.resolveSymbolicLinksSync();
-            text =
-                '(version 1)\n(allow default)\n'
-                '(deny file-write*)\n'
-                '${[...bothHome, ...bothSpellingsOf('/tmp/claude'), ...bothSpellingsOf('/tmp/cc-socks'), ...bothSpellingsOf(tmpReal)].map((p) => '(allow file-write* (subpath "$p"))').join('\n')}\n';
+          case 'TZ':
+            text += '$tzExtra\n';
+          case 'LIB':
+            text +=
+                [
+                  ...bothSpellingsOf('${home.path}/Library'),
+                ].map((p) => '(allow file-read* (subpath "$p"))').join('\n') +
+                '\n';
           default:
-            text = emitProfile(
-              resolveRuntime(
-                HarnessPresets.load('claude'),
-                services: const {},
-                cwd: '${tmp.path}/proj-$leg',
-                home: home.path,
-                env: {
-                  'HOME': home.path,
-                  'TMPDIR': Directory.systemTemp.resolveSymbolicLinksSync(),
-                },
-              ),
-            ).text;
+            text = text
+                .split('\n')
+                .where(
+                  (l) =>
+                      !(l.startsWith('(deny file-read*') &&
+                          l.contains('/Users')),
+                )
+                .join('\n');
         }
         final profile = File('${tmp.path}/$leg.sb')..writeAsStringSync(text);
         final log = '${tmp.path}/$leg.log';
@@ -154,8 +164,8 @@ expect {
           },
         );
         final verdict = RegExp(r'VERDICT: (\w+)').firstMatch(r.stdout);
-        verdicts[leg] = verdict?.group(1) ?? 'UNKNOWN(${r.exitCode})';
-        matrix.add('leg=$leg verdict=${verdicts[leg]} exit=${r.exitCode}');
+        final v = verdict?.group(1) ?? 'UNKNOWN(${r.exitCode})';
+        matrix.add('leg=$leg verdict=$v');
         Directory('build/harness-artifacts').createSync(recursive: true);
         if (File(log).existsSync()) {
           File(log).copySync('build/harness-artifacts/claude-bisect-$leg.log');
