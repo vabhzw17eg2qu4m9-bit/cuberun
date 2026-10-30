@@ -184,13 +184,26 @@ exit 0
           '${DateTime.now().millisecondsSinceEpoch}.log';
       if (File(logPath).existsSync()) File(logPath).copySync(kept);
       String cleanTail() => stripAnsi(transcriptTail(logPath));
+      // expect's own puts (protocol verdicts + stall diagnostics:
+      // ps/sample/lsof) lands on ITS stdout — archive it verbatim and
+      // put it in every failure reason.
+      final driverOut = File(
+        '$artifactDir/claude-tty-driver-'
+        '${DateTime.now().millisecondsSinceEpoch}.log',
+      );
+      driverOut.writeAsStringSync(r.stdout);
+      final driverTail = () {
+        final t = r.stdout;
+        return t.length <= 5000 ? t : '...${t.substring(t.length - 5000)}';
+      };
 
       expect(
         r.exitCode,
         0,
         reason:
             'expect protocol failed (exit ${r.exitCode}): '
-            '${r.stderr}\ntranscript tail:\n${cleanTail()}',
+            '${r.stderr}\ndriver output (incl. stall diagnostics):\n'
+            '${driverTail()}\ntranscript tail:\n${cleanTail()}',
       );
 
       final transcript = stripAnsi(File(logPath).readAsStringSync());
