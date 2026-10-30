@@ -45,6 +45,7 @@ void main() {
   /// Installs the native claude binary from the npm registry tarball;
   /// returns the directory to put on PATH (the one holding `claude`).
   String installNativeClaude(Directory into) {
+    into.createSync(recursive: true);
     final meta = Process.runSync('curl', [
       '-fsSL',
       'https://registry.npmjs.org/@anthropic-ai/claude-code-darwin-arm64/latest',
