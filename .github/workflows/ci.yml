@@ -94,6 +94,14 @@ jobs:
         with:
           sdk: stable
       - run: dart pub get
+      # P5 — the claude CLI is not preinstalled on runners; the npm
+      # install unlocks the AC-C6 unauthenticated smoke (probe + --version
+      # inside the profile). Failure keeps the suite green: the AC-C6 legs
+      # skip with an explicit reason instead.
+      - name: install claude CLI (AC-C6 probe smoke, P5)
+        run: |
+          npm install -g @anthropic-ai/claude-code || \
+            echo "claude CLI install failed — AC-C6 legs will skip with reason"
       - name: full integration suite (probe + negative control + tool matrices)
         env:
           GH_TOKEN: ${{ github.token }}
