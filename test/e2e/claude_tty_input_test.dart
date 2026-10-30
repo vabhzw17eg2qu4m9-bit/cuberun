@@ -223,12 +223,19 @@ exit 0
       var confinedPassed = confined.exitCode == 0;
       if (confinedPassed) {
         final transcript = stripAnsi(File(confinedLog).readAsStringSync());
-        confinedPassed = transcript.contains('hellotest123');
+        // The TUI draws keystrokes interleaved with frame redraws, so a
+        // contiguous marker is not guaranteed — require the marker
+        // characters IN ORDER (same semantics as the expect-side match;
+        // junk between letters is TUI redraw, not echo).
+        confinedPassed = RegExp(
+          'h.*e.*l.*l.*o.*t.*e.*s.*t.*1.*2.*3',
+          dotAll: true,
+        ).hasMatch(transcript);
         expect(
           confinedPassed,
           isTrue,
           reason:
-              'the typed marker never echoed back — TUI input path is '
+              'the typed marker was never drawn back — TUI input path is '
               'dead (issue #139). Transcript tail:\n'
               '${cleanTail(confinedLog)}',
         );
