@@ -25,7 +25,8 @@ List<String> bannerLines({
         '(profile $key10${profilePath == null ? '' : ': $profilePath'})',
     '   source : $src',
     '   rw     : ${runtime.projDir} · ${runtime.agentRoot} · ${runtime.tmp}'
-        '${runtime.extraWrite.isEmpty ? '' : ' · ${runtime.extraWrite.join(' · ')}'}',
+        '${runtime.extraWrite.isEmpty ? '' : ' · ${runtime.extraWrite.join(' · ')}'}'
+        '${runtime.extraWritePrefix.isEmpty ? '' : ' · ${runtime.extraWritePrefix.join(' · ')}'}',
     '   ro     : system dirs'
         '${runtime.runtimeDirs.isEmpty ? '' : ' · runtime (${runtime.runtimeDirs.join(' · ')})'}'
         '${runtime.extraRead.isEmpty ? '' : ' · ${runtime.extraRead.join(' · ')}'}',

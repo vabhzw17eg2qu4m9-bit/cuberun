@@ -118,6 +118,8 @@ spec:                         # required map
     - ~/.gitconfig
   extraWrite:                 # optional list of read-write grants
     - ~/.cache/myagent
+  extraWritePrefix:           # optional list of read-write prefix grants
+    - ~/.claude.json          # covers the file + its ~/.claude.json* siblings
   network: open               # optional; "open" is the only value in v1
 ```
 
@@ -137,13 +139,14 @@ spec:                         # required map
 | `spec.widenToDotParent` | bool | no | default `false`. Widens a dot-dir root one level: `~/.pi/agent` → `~/.pi` (skills/themes live next to agent state). Applied once, after any env override |
 | `spec.extraRead` | list of paths | no | read-only grants; every entry sanitized like `agentRoot` |
 | `spec.extraWrite` | list of paths | no | read-write grants; same sanitation |
+| `spec.extraWritePrefix` | list of paths | no | read-write PREFIX grants (issue #139): each entry emits the native SBPL `(prefix ...)` filter — the path itself AND every path sharing its string prefix (e.g. `~/.claude.json` covers the exact file plus the `.claude.json.tmp.<rand>`/`.lock`/`.backup` siblings an atomic writer creates). Same sanitation as `extraWrite`, and the E10 blocklist additionally rejects a prefix that would COVER an ungrantable root (`~/.ss` would take in `~/.ssh`). A prefix grant reads too, with the same scope |
 | `spec.network` | string | no | only `open` in v1 (also the default when omitted). SBPL remote filters accept IP literals only while LLM endpoints sit on rotating CDN IPs; per-task network denies are the inner cubes' job, not Layer 0's |
 
 **Strict parsing:** an unknown key at ANY level — top, `metadata`, or
 `spec` — is an error naming the YAML path, with the sorted allow-list:
 
 ```
-<path>.spec.extraread: unknown key (allowed: [agentRoot, agentRootEnv, command, extraRead, extraWrite, network, widenToDotParent])
+<path>.spec.extraread: unknown key (allowed: [agentRoot, agentRootEnv, command, extraRead, extraWrite, extraWritePrefix, network, widenToDotParent])
 ```
 
 Every schema violation (wrong `apiVersion`/`kind`, bad name, unknown
@@ -154,8 +157,8 @@ ignored — a typo can never degrade to "no grant" or "no confinement".
 
 ### Path sanitation (any declarative path)
 
-`agentRoot`, `extraRead[]`, `extraWrite[]` all go through the same
-sanitation. Rejected, with the YAML path in the message:
+`agentRoot`, `extraRead[]`, `extraWrite[]`, `extraWritePrefix[]` all go
+through the same sanitation. Rejected, with the YAML path in the message:
 
 - empty / whitespace-only, or not a string
 - not absolute and not `~/`-prefixed (relative paths: `must be absolute or ~/-prefixed`)
@@ -170,7 +173,9 @@ facts at launch:
 
 - **rw** — the project dir (cwd) · the agent root (after env override +
   widening) · `realpath($TMPDIR)` (falls back to `/tmp`) · every
-  `extraWrite` / service / env-knob write grant · `/dev/null` · `/dev/fd`.
+  `extraWrite` / service / env-knob write grant · every `extraWritePrefix`
+  grant as a native SBPL `(prefix ...)` filter (issue #139) · `/dev/null`
+  · `/dev/fd`.
 - **ro** — system dirs (TLS trust store included) · **runtime dirs** of
   the launch command itself: each `PATH` dir, plus the parent prefix of
   a `<prefix>/bin` interpreter dir (module trees under `<prefix>/lib`
@@ -194,7 +199,8 @@ rewritten (mtime-stable). Invalidation is source-driven and unskippable:
 
 - **Any change to the resolved configuration** — every manifest field
   (`command`, `agentRoot`, `agentRootEnv` override, `widenToDotParent`,
-  `extraRead`, `extraWrite`), any `--use-*` service flag, the selected
+  `extraRead`, `extraWrite`, `extraWritePrefix`), any `--use-*` service
+  flag, the selected
   `--folders` groups (a different selection or an edited entry), the
   `CUBE_SANDBOX_EXTRA_READ`/`_WRITE` env knobs, even a moved `$TMPDIR` —
   changes the emitted text ⇒ **new key10 ⇒ the next launch stages and runs

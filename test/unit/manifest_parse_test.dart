@@ -169,6 +169,22 @@ spec:
       ),
       contains('spec.widenToDotParent'),
     );
+    rejects(
+      'extraWritePrefix non-list',
+      good.replaceFirst(
+        '  agentRoot: ~/.pi',
+        '  agentRoot: ~/.pi\n  extraWritePrefix: ~/.claude.json',
+      ),
+      contains('spec.extraWritePrefix'),
+    );
+    rejects(
+      'extraWritePrefix .. climb',
+      good.replaceFirst(
+        '  agentRoot: ~/.pi',
+        "  agentRoot: ~/.pi\n  extraWritePrefix:\n    - '~/.claude/../.ssh'",
+      ),
+      allOf(contains('spec.extraWritePrefix[0]'), contains('..')),
+    );
     rejects('not a map', '- a\n- b', contains('must be a yaml map'));
   });
 
@@ -194,6 +210,7 @@ spec:
       widenToDotParent: true,
       extraRead: const ['~/.config/myh'],
       extraWrite: const ['/tmp/myh-cache'],
+      extraWritePrefix: const ['~/.myh.json'],
     );
     final reparsed = HarnessSpec.fromYamlText(spec.toYamlText());
     expect(reparsed.name, spec.name);
@@ -203,6 +220,7 @@ spec:
     expect(reparsed.widenToDotParent, spec.widenToDotParent);
     expect(reparsed.extraRead, spec.extraRead);
     expect(reparsed.extraWrite, spec.extraWrite);
+    expect(reparsed.extraWritePrefix, spec.extraWritePrefix);
   });
 
   test('toYamlText renders description and round-trips it', () {

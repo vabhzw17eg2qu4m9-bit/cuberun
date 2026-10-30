@@ -8,7 +8,9 @@
 ///   only, LLM endpoints sit on rotating CDN IPs; per-task denies are the
 ///   inner cubes' job).
 /// - writes deny-by-default (bare deny), allowed only for: project dir,
-///   agent root, realpath($TMPDIR), extraWrite, /dev/null, /dev/fd.
+///   agent root, realpath($TMPDIR), extraWrite, extraWritePrefix
+///   (issue #139 `(prefix ...)` — a path plus its string-prefix
+///   siblings), /dev/null, /dev/fd.
 /// - reads: curated denies over user-data roots (BOTH macOS spellings,
 ///   E2) with metadata re-allows so path resolution lives (a bare
 ///   `(deny file-read*)` makes the SBPL compiler ABORT — E1); system
@@ -44,7 +46,7 @@ const List<String> kReadSystemReallows = <String>[
 
 enum _Verb { allow, deny }
 
-enum _Kind { bare, literal, subpath }
+enum _Kind { bare, literal, prefix, subpath }
 
 final class _Rule {
   const _Rule(this.verb, this.kind, this.path, {this.metadata = false});
@@ -56,11 +58,12 @@ final class _Rule {
 }
 
 /// Lexicographic sort key: bare rules first (length -1), then path length,
-/// verb (deny < allow), kind (literal < subpath), finally path text.
+/// verb (deny < allow), kind (literal < prefix < subpath), finally path
+/// text — last-match-wins means the most specific matching rule wins.
 List<Comparable<Object?>> _sortKey(_Rule r) => <Comparable<Object?>>[
   r.kind == _Kind.bare ? -1 : r.path.length,
   r.verb == _Verb.deny ? 0 : 1,
-  r.kind == _Kind.literal ? 0 : 1,
+  r.kind == _Kind.literal ? 0 : (r.kind == _Kind.prefix ? 1 : 2),
   r.path,
 ];
 
@@ -78,10 +81,12 @@ String _emit(_Rule r, String op) {
   if (r.kind == _Kind.bare) {
     return '(${r.verb.name} ${r.metadata ? 'file-read-metadata' : op})';
   }
-  final arg = r.kind == _Kind.literal
+  final filter = r.kind == _Kind.literal
       ? '(literal "${r.path}")'
+      : r.kind == _Kind.prefix
+      ? '(prefix "${r.path}")'
       : '(subpath "${r.path}")';
-  return '(${r.verb.name} ${r.metadata ? 'file-read-metadata' : op} $arg)';
+  return '(${r.verb.name} ${r.metadata ? 'file-read-metadata' : op} $filter)';
 }
 
 /// The emitted profile: deterministic text + its content key.
@@ -109,6 +114,8 @@ SbplProfile emitProfile(HarnessRuntime runtime) {
     _Rule(_Verb.allow, _Kind.subpath, runtime.agentRoot),
     _Rule(_Verb.allow, _Kind.subpath, runtime.tmp),
     for (final p in runtime.extraWrite) _Rule(_Verb.allow, _Kind.subpath, p),
+    for (final p in runtime.extraWritePrefix)
+      _Rule(_Verb.allow, _Kind.prefix, p),
   ];
 
   // --- reads: curated denies + metadata re-allows + grant re-allows.
@@ -135,6 +142,14 @@ SbplProfile emitProfile(HarnessRuntime runtime) {
     for (final p in bothSpellingsOf(root)) {
       if (seenRead.add(p)) {
         reads.add(_Rule(_Verb.allow, _Kind.subpath, p));
+      }
+    }
+  }
+  // Prefix grants read too — same string-prefix scope as the write.
+  for (final p in runtime.extraWritePrefix) {
+    for (final sp in bothSpellingsOf(p)) {
+      if (seenRead.add(sp)) {
+        reads.add(_Rule(_Verb.allow, _Kind.prefix, sp));
       }
     }
   }

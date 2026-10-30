@@ -33,12 +33,16 @@ void main() {
     expect(claude.agentRoot, '~/.claude');
     expect(claude.agentRootEnv, 'CLAUDE_CONFIG_DIR');
     expect(claude.widenToDotParent, isFalse);
-    expect(claude.extraWrite, ['~/.claude.json', '~/.claude.json.backup']);
+    expect(claude.extraWrite, isEmpty);
+    expect(claude.extraWritePrefix, ['~/.claude.json']);
   });
 
-  test('claude-desktop: absolute argv, app-support root, starter grants', () {
+  test('claude-desktop: absolute argv with --no-sandbox (issue #140)', () {
     final d = HarnessPresets.load('claude-desktop');
-    expect(d.command, ['/Applications/Claude.app/Contents/MacOS/Claude']);
+    expect(d.command, [
+      '/Applications/Claude.app/Contents/MacOS/Claude',
+      '--no-sandbox',
+    ]);
     expect(d.agentRoot, '~/Library/Application Support/Claude');
     expect(d.agentRootEnv, isNull);
     expect(d.widenToDotParent, isFalse);
@@ -75,19 +79,13 @@ void main() {
     expect(() => HarnessPresets.load('nope'), throwsA(isA<ConfigException>()));
   });
 
-  test('AC-C2: claude.json + .backup resolve into write allows', () {
+  test('AC-C2: the ~/.claude.json sibling family resolves into prefix '
+      'grants (issue #139)', () {
     final rt = resolve('claude');
     expect(rt.agentRoot, '$home/.claude');
-    expect(rt.extraWrite, ['$home/.claude.json', '$home/.claude.json.backup']);
+    expect(rt.extraWritePrefix, ['$home/.claude.json']);
     final text = emitProfile(rt).text;
-    expect(
-      text,
-      contains('(allow file-write* (subpath "$home/.claude.json"))'),
-    );
-    expect(
-      text,
-      contains('(allow file-write* (subpath "$home/.claude.json.backup"))'),
-    );
+    expect(text, contains('(allow file-write* (prefix "$home/.claude.json"))'));
   });
 
   test('AC-C2: claude config files are absent from the read denies', () {

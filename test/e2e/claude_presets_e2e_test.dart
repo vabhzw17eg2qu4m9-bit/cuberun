@@ -1,6 +1,8 @@
 @Tags(['integration'])
 library;
 
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:test/test.dart';
@@ -121,4 +123,52 @@ void main() {
     ], cwd: proj.path);
     expect(show.exit, 0, reason: 'stderr: ${show.stderr}');
   });
+
+  test(
+    'issue #140: launch claude-desktop stays alive, no GPU fatal loop',
+    () async {
+      if (!Directory(bundle).existsSync()) {
+        markTestSkipped(
+          'Claude.app not installed on this host (CI runners lack it) — '
+          'owner validates live (issue #140)',
+        );
+        return;
+      }
+      final proj = Directory.systemTemp.createTempSync('cube-sandbox-cldlv-');
+      addTearDown(() => proj.deleteSync(recursive: true));
+
+      final p = await Process.start(h.ensureBinary(), [
+        'launch',
+        '--wait',
+        'claude-desktop',
+      ], workingDirectory: proj.path);
+      final outBuf = StringBuffer();
+      unawaited(
+        p.stdout.transform(utf8.decoder).listen(outBuf.write).asFuture<void>(),
+      );
+      unawaited(
+        p.stderr.transform(utf8.decoder).listen(outBuf.write).asFuture<void>(),
+      );
+
+      // >=10s alive with no GPU-fatal is the issue's acceptance bar.
+      var exited = false;
+      unawaited(p.exitCode.then((_) => exited = true));
+      await Future<void>.delayed(const Duration(seconds: 10));
+      expect(
+        exited,
+        isFalse,
+        reason:
+            'claude-desktop exited within 10s — nested-sandbox fatal '
+            'loop not fixed? Output:\n${outBuf.toString()}',
+      );
+      expect(
+        outBuf.toString(),
+        isNot(contains("GPU process isn't usable")),
+        reason: 'GPU fatal loop (issue #140): ${outBuf.toString()}',
+      );
+      p.kill();
+    },
+    skip: hostGuard ?? false,
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
 }
