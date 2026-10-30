@@ -101,24 +101,23 @@ final class SbplProfile {
   final String key10;
 }
 
-/// Emits the deterministic SBPL profile for [runtime].
-SbplProfile emitProfile(HarnessRuntime runtime) {
-  final lines = <String>['(version 1)', '(allow default)', '(allow network*)'];
+/// Writes: bare deny first, then explicit allows — /dev/null, /dev/fd,
+/// project dir, agent root, realpath($TMPDIR), subpath extras, and the
+/// issue-#139 prefix grants.
+List<_Rule> _writeRules(HarnessRuntime runtime) => <_Rule>[
+  const _Rule(_Verb.deny, _Kind.bare, ''),
+  const _Rule(_Verb.allow, _Kind.literal, '/dev/null'),
+  const _Rule(_Verb.allow, _Kind.subpath, '/dev/fd'),
+  _Rule(_Verb.allow, _Kind.subpath, runtime.projDir),
+  _Rule(_Verb.allow, _Kind.subpath, runtime.agentRoot),
+  _Rule(_Verb.allow, _Kind.subpath, runtime.tmp),
+  for (final p in runtime.extraWrite) _Rule(_Verb.allow, _Kind.subpath, p),
+  for (final p in runtime.extraWritePrefix) _Rule(_Verb.allow, _Kind.prefix, p),
+];
 
-  // --- writes: bare deny, then explicit allows.
-  final writes = <_Rule>[
-    const _Rule(_Verb.deny, _Kind.bare, ''),
-    const _Rule(_Verb.allow, _Kind.literal, '/dev/null'),
-    const _Rule(_Verb.allow, _Kind.subpath, '/dev/fd'),
-    _Rule(_Verb.allow, _Kind.subpath, runtime.projDir),
-    _Rule(_Verb.allow, _Kind.subpath, runtime.agentRoot),
-    _Rule(_Verb.allow, _Kind.subpath, runtime.tmp),
-    for (final p in runtime.extraWrite) _Rule(_Verb.allow, _Kind.subpath, p),
-    for (final p in runtime.extraWritePrefix)
-      _Rule(_Verb.allow, _Kind.prefix, p),
-  ];
-
-  // --- reads: curated denies + metadata re-allows + grant re-allows.
+/// Read denies over the curated user-data roots, both spellings, with
+/// the metadata re-allows that keep path resolution alive (E1/E2).
+List<_Rule> _readDenyRules() {
   final reads = <_Rule>[];
   for (final root in kReadDenyRoots) {
     for (final p in bothSpellingsOf(root)) {
@@ -128,6 +127,13 @@ SbplProfile emitProfile(HarnessRuntime runtime) {
       reads.add(_Rule(_Verb.allow, _Kind.subpath, p, metadata: true));
     }
   }
+  return reads;
+}
+
+/// Read re-allows: system roots, runtime dirs, every read grant — and
+/// every rw grant (writes imply reads). Prefix grants read with the
+/// SAME string-prefix scope as their write (issue #139).
+List<_Rule> _readGrantRules(HarnessRuntime runtime) {
   final reallow = <String>[
     ...kReadSystemReallows,
     runtime.projDir,
@@ -137,25 +143,30 @@ SbplProfile emitProfile(HarnessRuntime runtime) {
     ...runtime.extraRead,
     ...runtime.extraWrite, // rw grants read too
   ];
-  final seenRead = <String>{};
-  for (final root in reallow) {
+  final reads = <_Rule>[];
+  final seen = <String>{};
+  void add(String root, _Kind kind) {
     for (final p in bothSpellingsOf(root)) {
-      if (seenRead.add(p)) {
-        reads.add(_Rule(_Verb.allow, _Kind.subpath, p));
-      }
-    }
-  }
-  // Prefix grants read too — same string-prefix scope as the write.
-  for (final p in runtime.extraWritePrefix) {
-    for (final sp in bothSpellingsOf(p)) {
-      if (seenRead.add(sp)) {
-        reads.add(_Rule(_Verb.allow, _Kind.prefix, sp));
-      }
+      if (seen.add(p)) reads.add(_Rule(_Verb.allow, kind, p));
     }
   }
 
-  writes.sort(_compare);
-  reads.sort(_compare);
+  for (final root in reallow) {
+    add(root, _Kind.subpath);
+  }
+  for (final p in runtime.extraWritePrefix) {
+    add(p, _Kind.prefix);
+  }
+  return reads;
+}
+
+/// Emits the deterministic SBPL profile for [runtime].
+SbplProfile emitProfile(HarnessRuntime runtime) {
+  final lines = <String>['(version 1)', '(allow default)', '(allow network*)'];
+
+  final writes = _writeRules(runtime)..sort(_compare);
+  final reads = [..._readDenyRules(), ..._readGrantRules(runtime)]
+    ..sort(_compare);
   for (final r in writes) {
     lines.add(_emit(r, 'file-write*'));
   }

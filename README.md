@@ -100,16 +100,18 @@ spec:
   widenToDotParent: true   # ~/.pi/agent -> ~/.pi
   extraRead: []            # read-only grants
   extraWrite: []           # read-write grants
+  extraWritePrefix: []     # read-write prefix grants (file + its siblings)
   network: open            # v1: open only
 ```
 
 Strict parse: any unknown key at any level fails naming the YAML path.
 Resolution: `--file` > `<cwd>/.cube-sandbox/<name>.yaml` > `~/.cube-sandbox/` >
 preset. Built-in presets: `claude` (`~/.claude`, `CLAUDE_CONFIG_DIR`
-override, `~/.claude.json` + `.backup` write grants), `claude-desktop`
-(Claude.app argv, `~/Library/Application Support/Claude`, logs + caches),
-`fa` (`~/.fah`), `omp` (`~/.omp`), `pi` (`~/.pi`, widened) — parsed by the
-same parser as user files.
+override, `(prefix ~/.claude.json)` covering the config file plus its
+atomic-write siblings), `claude-desktop`
+(Claude.app argv with `--no-sandbox`, `~/Library/Application Support/Claude`,
+logs + caches), `fa` (`~/.fah`), `omp` (`~/.omp`), `pi` (`~/.pi`,
+widened) — parsed by the same parser as user files.
 
 ## Profile cache (rebuild, provenance, clean)
 
