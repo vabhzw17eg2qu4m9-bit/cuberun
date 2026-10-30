@@ -179,7 +179,7 @@ expect {
       // now grants it — all legs must BOOT. A SPIN regression here
       // (e.g. the tz re-allow removed) is the issue-#139 wedge family
       // returning: red with the matrix, transcripts archived.
-      final booted = verdicts.values.every((v) => v == 'BOOT');
+      final booted = matrix.every((m) => m.contains('verdict=BOOT'));
       expect(
         booted,
         isTrue,
