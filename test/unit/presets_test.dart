@@ -34,7 +34,11 @@ void main() {
     expect(claude.agentRootEnv, 'CLAUDE_CONFIG_DIR');
     expect(claude.widenToDotParent, isFalse);
     expect(claude.extraWrite, isEmpty);
-    expect(claude.extraWritePrefix, ['~/.claude.json', '/tmp/claude']);
+    expect(claude.extraWritePrefix, [
+      '~/.claude.json',
+      '/tmp/claude',
+      '/tmp/cc-socks',
+    ]);
   });
 
   test('claude-desktop: absolute argv with --no-sandbox (issue #140)', () {
@@ -83,7 +87,11 @@ void main() {
       'grants (issue #139)', () {
     final rt = resolve('claude');
     expect(rt.agentRoot, '$home/.claude');
-    expect(rt.extraWritePrefix, ['$home/.claude.json', '/tmp/claude']);
+    expect(rt.extraWritePrefix, [
+      '$home/.claude.json',
+      '/tmp/claude',
+      '/tmp/cc-socks',
+    ]);
     final text = emitProfile(rt).text;
     expect(text, contains('(allow file-write* (prefix "$home/.claude.json"))'));
   });

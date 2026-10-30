@@ -27,7 +27,11 @@ void main() {
   final runtimes = <String, HarnessRuntime>{
     'claude': fixed(
       '/Users/dev/.claude',
-      extraWritePrefix: const ['/Users/dev/.claude.json', '/tmp/claude'],
+      extraWritePrefix: const [
+        '/Users/dev/.claude.json',
+        '/tmp/claude',
+        '/tmp/cc-socks',
+      ],
     ),
     'claude-desktop': fixed(
       '/Users/dev/Library/Application Support/Claude',
@@ -65,7 +69,7 @@ void main() {
     // (command.first pins argv0; the --no-sandbox tail is a UT pin).
     final pins = [
       'claude|claude|~/.claude|CLAUDE_CONFIG_DIR||'
-          '~/.claude.json,/tmp/claude',
+          '~/.claude.json,/tmp/claude,/tmp/cc-socks',
       'claude-desktop|/Applications/Claude.app/Contents/MacOS/Claude|'
           '~/Library/Application Support/Claude||'
           '~/Library/Logs/Claude,~/Library/Caches/com.anthropic.claude|',
@@ -87,7 +91,7 @@ void main() {
     // semantics for the same facts turns this red. #140 note: the
     // claude-desktop --no-sandbox argv is NOT a profile input — its
     // key10 is unchanged by the fix.
-    expect(claude.key10, 'f18b73d9cc');
+    expect(claude.key10, '793399aacb');
     expect(claudeDesktop.key10, '46d20a8ae9');
     expect(fa.key10, 'e8ee06804e');
     expect(omp.key10, 'a969c70e85');
@@ -99,7 +103,11 @@ void main() {
       emitProfile(
         fixed(
           '/Users/dev/.claude',
-          extraWritePrefix: const ['/Users/dev/.claude.json', '/tmp/claude'],
+          extraWritePrefix: const [
+            '/Users/dev/.claude.json',
+            '/tmp/claude',
+            '/tmp/cc-socks',
+          ],
         ),
       ).text,
       claude.text,
