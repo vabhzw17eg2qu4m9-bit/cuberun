@@ -43,14 +43,11 @@ final class HarnessPresets {
   };
 
   static const String _claude = '''
-# Claude Code CLI (npm @anthropic-ai/claude-code — native Mach-O or node
-# shebang; E5 runtime-prefix grants apply). State root ~/.claude (P2).
-# The config FILE ~/.claude.json sits directly under the home directory
-# and Claude Code persists it atomically with RANDOM siblings
-# (.claude.json.tmp.<rand>, .claude.json.lock, .claude.json.backup) —
-# literals cannot enumerate random suffixes (issue #139), so the grant
-# is the SBPL string-prefix filter: ~/.claude.json itself plus every
-# ~/.claude.json* sibling. CLAUDE_CONFIG_DIR overrides the root.
+# Claude Code CLI (npm @anthropic-ai/claude-code, node shebang — E5
+# runtime-prefix grants apply). State root ~/.claude (P2); the config
+# FILES ~/.claude.json + ~/.claude.json.backup sit directly under the
+# home directory, so they need explicit extraWrite. CLAUDE_CONFIG_DIR
+# overrides the root.
 apiVersion: cube-sandbox/v1
 kind: Harness
 metadata:
@@ -60,8 +57,9 @@ spec:
   command: claude
   agentRoot: ~/.claude
   agentRootEnv: CLAUDE_CONFIG_DIR
-  extraWritePrefix:
+  extraWrite:
     - ~/.claude.json
+    - ~/.claude.json.backup
   network: open
 ''';
 
