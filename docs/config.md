@@ -243,14 +243,15 @@ the union of its grants. Flags append to the resolved profile before
 the SBPL emit; multiple flags union and dedup, and flag order never
 changes the output.
 
-| flag | grants (shipped catalog — all read-only) | why |
+| flag | grants (shipped catalog) | why |
 | --- | --- | --- |
 | `--use-github` | ro `~/.config/gh`, `~/.gitconfig` | gh token (hosts.yml, no Keychain) + git identity |
 | `--use-gitlab` | ro `~/.config/glab`, `~/.gitconfig` | glab config; `~/.gitconfig` dedups with `--use-github` |
 | `--use-nvm` | ro `~/.nvm` | any installed node under `~/.nvm/versions/node/<v>` works |
+| `--use-uv` | rw `~/.cache/uv`, `~/.local/share/uv` | uv cache + managed pythons (`python/`) & tools (`tools/`); config and `~/.local/bin` deliberately not granted |
 
 - Unknown service fails closed and loud, listing the catalog:
-  `--use-x: unknown service (catalog: github, gitlab, nvm)` — never a
+  `--use-x: unknown service (catalog: github, gitlab, nvm, uv)` — never a
   silent ignore.
 - Git under confinement: https public remotes work as-is; private
   https remotes need `--use-github`; ssh remotes deliberately fail —

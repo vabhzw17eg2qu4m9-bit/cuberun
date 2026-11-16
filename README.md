@@ -161,6 +161,7 @@ Services GRANT FOLDERS; they never forbid commands — a confined `gh` or
 - `--use-github` — ro `~/.config/gh`, `~/.gitconfig`
 - `--use-gitlab` — ro `~/.config/glab`, `~/.gitconfig` (dedups)
 - `--use-nvm` — ro `~/.nvm` (any installed node works)
+- `--use-uv` — rw `~/.cache/uv`, `~/.local/share/uv` (uv-managed Python)
 
 Unknown `--use-x` fails closed listing the catalog. **Never grantable**:
 `~/.ssh`, `~/.gnupg`, `~/Library/Keychains` — rejected from every

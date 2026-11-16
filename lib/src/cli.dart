@@ -53,7 +53,7 @@ Usage:
       (--file/--yaml/--use-*/--folders) precede the profile;
       everything AFTER it is the harness's argv, forwarded verbatim
       (order preserved) and never affects the staged profile key.
-      Service grants: --use-github, --use-gitlab, --use-nvm.
+      Service grants: --use-github, --use-gitlab, --use-nvm, --use-uv.
       Folder groups: --folders <group[,group...]> widens this run with
       named groups from ~/.cube-sandbox/folders.yaml (repeatable,
       accumulates; unknown group or missing file is a config error).

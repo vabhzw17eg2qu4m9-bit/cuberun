@@ -173,9 +173,11 @@ anything outside the union of grants.
     runtime-prefix detection already turns a PATH entry under `~/.nvm`
     into a read grant for the interpreter + its module tree — this flag
     makes the whole nvm root readable so ANY installed node works).
+  - `--use-uv` — rw: `~/.cache/uv`, `~/.local/share/uv` (uv cache +
+    managed pythons under `python/`, tools under `tools/`).
+    (Retracted from the second tier — shipped as a core grant in #196.)
 - **second tier (opt-in, follow-up):** `--use-npm` (ro `~/.npm`),
-  `--use-pub` (rw `~/.pub-cache`), `--use-uv` (rw `~/.cache/uv`,
-  `~/.local/share/uv`), `--use-cargo` (rw `~/.cargo`),
+  `--use-pub` (rw `~/.pub-cache`), `--use-cargo` (rw `~/.cargo`),
   `--use-pip` (ro `~/.config/pip`); user-defined service snippets
   `~/.cube-sandbox/services/<name>.yaml` parsed through the same strict
   parser (resolution: project > user > built-in catalog).

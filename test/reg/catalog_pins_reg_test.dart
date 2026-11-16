@@ -12,6 +12,7 @@ void main() {
       'github|~/.config/gh,~/.gitconfig|',
       'gitlab|~/.config/glab,~/.gitconfig|',
       'nvm|~/.nvm|',
+      'uv||~/.cache/uv,~/.local/share/uv',
     ];
     final actual = [
       for (final g in kServiceCatalog)

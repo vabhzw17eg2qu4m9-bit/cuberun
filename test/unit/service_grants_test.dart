@@ -32,6 +32,47 @@ void main() {
     expect(g.read, ['/Users/dev/.nvm']);
   });
 
+  test('--use-uv grants exactly the two v2-row rw dirs (#196, AC1)', () {
+    final g = resolveServiceGrants({'uv'}, home: home);
+    expect(
+      g.read,
+      isEmpty,
+      reason: 'OQ2 = NO: no ro ~/.config/uv (v2 row verbatim)',
+    );
+    expect(g.write, ['/Users/dev/.cache/uv', '/Users/dev/.local/share/uv']);
+  });
+
+  test('--use-uv unions and dedups with --use-github; order immune (E9)', () {
+    final gu = resolveServiceGrants({'github', 'uv'}, home: home);
+    final ug = resolveServiceGrants({'uv', 'github'}, home: home);
+    expect(gu.read, ug.read);
+    expect(gu.write, ug.write);
+    expect(gu.read, ['/Users/dev/.config/gh', '/Users/dev/.gitconfig']);
+    expect(gu.write, ['/Users/dev/.cache/uv', '/Users/dev/.local/share/uv']);
+  });
+
+  test('uv paths never touch an ungrantable root (E10, UT-uv3)', () {
+    final g = resolveServiceGrants({'uv'}, home: home);
+    expect(ungrantableViolations([...g.read, ...g.write], home), isEmpty);
+    expect(ungrantablePrefixViolations([...g.read, ...g.write], home), isEmpty);
+  });
+
+  test('case typo --use-uV fails closed, LOUD, catalog listed with uv', () {
+    expect(
+      () => resolveServiceGrants({'uV'}, home: home), // case typo, never folded
+      throwsA(
+        isA<ConfigException>().having(
+          (e) => e.message,
+          'message',
+          allOf([
+            contains('--use-uV'),
+            contains('catalog: github, gitlab, nvm, uv'),
+          ]),
+        ),
+      ),
+    );
+  });
+
   test('unknown service fails closed, LOUD, catalog listed (E9)', () {
     expect(
       () => resolveServiceGrants({'gihub'}, home: home), // typo
@@ -44,6 +85,7 @@ void main() {
             contains('github'),
             contains('gitlab'),
             contains('nvm'),
+            contains('uv'),
           ]),
         ),
       ),
@@ -59,8 +101,8 @@ void main() {
       extraWrite: resolveServiceGrants(flags, home: home).write,
     );
 
-    final ab = emitProfile(withFlags({'github', 'gitlab', 'nvm'})).text;
-    final ba = emitProfile(withFlags({'nvm', 'gitlab', 'github'})).text;
+    final ab = emitProfile(withFlags({'github', 'gitlab', 'nvm', 'uv'})).text;
+    final ba = emitProfile(withFlags({'uv', 'nvm', 'gitlab', 'github'})).text;
     expect(ab, ba);
   });
 
@@ -114,8 +156,42 @@ void main() {
     expect(text, contains('(allow file-read* (subpath "$home/.config/gh"))'));
   });
 
+  test('#196: --use-uv changes key10; same flags => same key10', () {
+    HarnessRuntime mk(Set<String> flags) => HarnessRuntime(
+      projDir: '/Users/dev/proj',
+      agentRoot: '/Users/dev/.pi',
+      tmp: '/private/var/folders/t/T1',
+      extraRead: resolveServiceGrants(flags, home: home).read,
+      extraWrite: resolveServiceGrants(flags, home: home).write,
+    );
+    final plain = emitProfile(mk({})).key10;
+    final uv = emitProfile(mk({'uv'})).key10;
+    expect(uv, isNot(plain), reason: 'flag set is part of the content key');
+    expect(emitProfile(mk({'uv'})).key10, uv, reason: 'deterministic emit');
+  });
+
+  test('uv rw dirs are WRITE grants in the profile (reads implied)', () {
+    final rt = resolveRuntime(
+      HarnessSpec(name: 'pi', command: ['pi'], agentRoot: '~/.pi'),
+      services: {'uv'},
+      cwd: '/Users/dev/proj',
+      home: home,
+      env: {'HOME': home, 'TMPDIR': '/private/var/folders/t/T1'},
+      fs: _FakeIO(),
+    );
+    final text = emitProfile(rt).text;
+    expect(text, contains('(allow file-write* (subpath "$home/.cache/uv"))'));
+    expect(
+      text,
+      contains('(allow file-write* (subpath "$home/.local/share/uv"))'),
+    );
+    // OQ1/OQ2 = NO: nothing outside the two rw dirs may be granted.
+    expect(text.contains('.local/bin'), isFalse);
+    expect(text.contains('.config/uv'), isFalse);
+  });
+
   test('catalog ids pinned (REG support)', () {
-    expect(serviceCatalogIds, ['github', 'gitlab', 'nvm']);
+    expect(serviceCatalogIds, ['github', 'gitlab', 'nvm', 'uv']);
   });
 }
 
