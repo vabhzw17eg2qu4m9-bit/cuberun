@@ -56,6 +56,12 @@ const List<ServiceGrant> kServiceCatalog = <ServiceGrant>[
     read: ['~/.nvm'],
     description: 'node installs under ~/.nvm/versions/node/<v>',
   ),
+  ServiceGrant(
+    'uv',
+    read: [],
+    write: ['~/.cache/uv', '~/.local/share/uv'],
+    description: 'uv cache + managed pythons (python/) & tools (tools/)',
+  ),
 ];
 
 /// Catalog ids in catalog order.

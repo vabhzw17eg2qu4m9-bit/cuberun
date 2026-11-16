@@ -114,7 +114,8 @@ parser is the law. Full reference: `docs/config.md` in the cube-sandbox repo.
    not hand back a profile that fails probe.
 7. **Service grants.** Add `--use-github` (ro `~/.config/gh`,
    `~/.gitconfig`), `--use-gitlab` (ro `~/.config/glab`,
-   `~/.gitconfig`, dedups), `--use-nvm` (ro `~/.nvm`) at run time:
+   `~/.gitconfig`, dedups), `--use-nvm` (ro `~/.nvm`), `--use-uv`
+   (rw `~/.cache/uv`, `~/.local/share/uv`) at run time:
    `cube-sandbox launch --use-github <name>` (options precede the
    profile). Flags union + dedup; unknown
    ones fail loudly listing the catalog. To make grants permanent for a

@@ -33,7 +33,7 @@ void main() {
 
   test('forbidden patterns are real patterns (sanity)', () {
     expect(forbidden, isNotEmpty);
-    expect(flagSets.length, 8); // 2^3 subsets of {github, gitlab, nvm}
+    expect(flagSets.length, 16); // 2^4 subsets of {github, gitlab, nvm, uv}
   });
 
   test('every flag combination x every preset scans clean', () {
