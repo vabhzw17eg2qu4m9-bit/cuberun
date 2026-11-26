@@ -124,9 +124,12 @@ be picked when the source that produced it changed.
 
 **What the key sees (rebuilds) vs never sees (no rebuild):** key10 is a
 pure function of the emitted profile — the manifest spec fields, the
-`--use-*` service flags, the `CUBE_SANDBOX_EXTRA_READ` / `_WRITE` env
+`--use-*` service flags (built-in and `services.yaml` selections), the
+`CUBE_SANDBOX_EXTRA_READ` / `_WRITE` env
 knobs, the selected folder groups (names + their resolved entries), and
-`realpath($TMPDIR)`. Per-launch volatile argv — `--session`
+`realpath($TMPDIR)`. services.yaml `env:` values never enter the profile
+text (and never the `.src` stamp) — they ride the launch, not the key.
+Per-launch volatile argv — `--session`
 uuids, `-e` extension args, anything after the profile name — rides the
 harness's argv verbatim and **never changes the key**: identical config +
 different session id ⇒ same `key10`, no rewrite, no warning.
@@ -169,6 +172,47 @@ declarative source (impossible-by-construction, asserted by REG
 byte-scans). The operator escape hatches are the human-typed
 `CUBE_SANDBOX_EXTRA_READ` env knob and a blocklisted folder-group
 `read:` — both honored, never silent (loud ⚠ banner).
+
+### Custom service profiles (`services.yaml`)
+
+New `--use-<name>` ids need no code or rebuild: define them in
+`~/.cube-sandbox/services.yaml` (issue #204) and use them immediately —
+pure data, like `<name>.yaml` profiles:
+
+```yaml
+# ~/.cube-sandbox/services.yaml
+apiVersion: cube-sandbox/v1
+services:
+  scratch:
+    description: rw scratch for data jobs
+    read: [~/shared/notes]        # ro grants
+    write: [~/work/scratch]       # rw grants
+    env:                          # injected into the confined command
+      SCRATCH_HOST: localhost
+```
+
+```sh
+cube-sandbox show pi --use-scratch        # dry-run: banner shows the grants
+cube-sandbox launch --use-scratch pi      # use it
+```
+
+Strict schema (unknown key, bad name, unsafe path, non-scalar env value
+⇒ exit 2 naming the file AND line); names match `[a-z0-9][a-z0-9-]*`;
+env names match `[A-Za-z_][A-Za-z0-9_]*` with scalar values. **The
+built-in catalog wins on name collision** — an entry named `github` is
+ignored. Custom and built-in flags union (grants stay additive-only),
+ride the same merge stage (manifest → services → folder groups → env
+knobs), and change the emitted profile ⇒ a new `key10` ⇒ the next launch
+rebuilds (the `.src` stamp names the selected profiles; env VALUES never
+enter the profile text or stamps). The file is read only when a run
+names a non-built-in `--use-*` id. A blocklisted `write:` is rejected;
+a blocklisted `read:` is honored, never silent.
+
+The generated agent manual `~/.cube-sandbox/AGENTS.md` documents this
+dot-dir end to end (layout, profiles, services.yaml, folders.yaml,
+safety). `cube-sandbox init [--force]` (re)writes it: write-if-missing
+by default; `--force` is the only overwrite seam; any verb that resolves
+the user dot-dir ensures it exists.
 
 **Git remotes under confinement**: **https** remotes work for public
 repos as-is; **private** https remotes need `--use-github` so the gh
@@ -317,6 +361,11 @@ curl -fsSL https://github.com/vabhzw17eg2qu4m9-bit/cuberun/releases/latest/downl
 | `CUBE_SANDBOX_VERSION` | latest release | version to install |
 | `CUBE_SANDBOX_GITHUB_TOKEN` | unset | optional auth (rate limits / private forks) |
 | `CUBE_SANDBOX_DOWNLOAD_BASE` | GitHub Releases | artifact root override (mirrors / tests) |
+
+After installing, the installer runs `cube-sandbox init` so
+`~/.cube-sandbox/AGENTS.md` — the generated agent manual for the
+dot-dir — exists from the first minute (write-if-missing; never
+overwrites a user-owned copy; `cube-sandbox init --force` refreshes).
 
 From source: `just build && cp build/cube-sandbox-macos-arm64 ~/.local/bin/cube-sandbox`
 (human/CI action; the agent's own dev cube denies `~/.local/bin`).

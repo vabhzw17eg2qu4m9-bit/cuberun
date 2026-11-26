@@ -11,6 +11,7 @@ library;
 import 'dart:io' as io;
 
 import 'exceptions.dart';
+import 'agents_md.dart';
 import 'banner.dart';
 import 'cache_policy.dart';
 import 'folder_groups.dart';
@@ -23,6 +24,8 @@ import 'resolver.dart';
 import 'runtime.dart';
 import 'scaffold.dart';
 import 'sbpl.dart';
+import 'service_grants.dart';
+import 'service_profiles.dart';
 import 'stage.dart';
 
 /// cube-sandbox version (kept in one place for `--version` and CI smoke).
@@ -53,7 +56,8 @@ Usage:
       (--file/--yaml/--use-*/--folders) precede the profile;
       everything AFTER it is the harness's argv, forwarded verbatim
       (order preserved) and never affects the staged profile key.
-      Service grants: --use-github, --use-gitlab, --use-nvm, --use-uv.
+      Service grants: --use-github, --use-gitlab, --use-nvm, --use-uv
+      (built-in; custom ids load from ~/.cube-sandbox/services.yaml).
       Folder groups: --folders <group[,group...]> widens this run with
       named groups from ~/.cube-sandbox/folders.yaml (repeatable,
       accumulates; unknown group or missing file is a config error).
@@ -62,6 +66,10 @@ Usage:
       harness command.
   cube-sandbox list
       Enumerate profiles: presets + project .cube-sandbox/ + user ~/.cube-sandbox/.
+  cube-sandbox init [--force]
+      Ensure ~/.cube-sandbox/AGENTS.md — the agent manual for this
+      dot-dir (write-if-missing; a differing existing file is never
+      overwritten, only reported). --force replaces it explicitly.
   cube-sandbox show <profile> [--file <f> | --yaml <text|->] [--use-<service>]...
       [--folders <group,...>]
       Show resolved grants (rw / ro / denied banner).
@@ -127,6 +135,8 @@ Future<int> runCli(
         return await _cmdLaunch(rest, err);
       case 'list':
         return _cmdList(out);
+      case 'init':
+        return _cmdInit(rest, out, err);
       case 'show':
         return await _cmdShow(rest, out, err);
       case 'sbpl':
@@ -257,6 +267,7 @@ Future<
     HarnessRuntime runtime,
     List<String> cacheWarnings,
     String? folderStamp,
+    String? serviceStamp,
   })
 >
 _resolveForRun(_Opts opts, String verb) async {
@@ -273,6 +284,18 @@ _resolveForRun(_Opts opts, String verb) async {
     cwd: cwd,
     home: home,
   ).resolve(opts.positional.first, file: opts.file, yaml: yaml);
+
+  // Service profiles (issue #204): services.yaml is read ONLY when a
+  // non-built-in --use-* id is named — built-in-only runs never touch
+  // it (the folder-groups lazy contract, mirrored). The catalog wins on
+  // collision; unknown ids fail closed listing everything that exists.
+  final builtIn = serviceCatalogIds.toSet();
+  final needsConfig = opts.services.any((s) => !builtIn.contains(s));
+  final profiles = needsConfig ? loadServiceProfiles(home: home) : null;
+  final selectedProfiles = selectServiceProfiles(profiles, opts.services);
+  final serviceStamp = selectedProfiles.isEmpty
+      ? null
+      : serviceProfilesStamp(selectedProfiles);
 
   // Folder groups (issue #101): selected per run, layered over whichever
   // profile resolved. Flag unused => the file is NEVER read.
@@ -295,6 +318,7 @@ _resolveForRun(_Opts opts, String verb) async {
     home: home,
     folderRead: folders?.read ?? const [],
     folderWrite: folders?.write ?? const [],
+    serviceProfiles: profiles,
     // withGrants is the extension seam: the layer's loudness rides along.
   ).withGrants(warnings: folders?.warnings ?? const []);
   // Issue #69 loudness: a DIFFERING same-stem copy in another chain
@@ -309,6 +333,7 @@ _resolveForRun(_Opts opts, String verb) async {
     runtime: runtime,
     cacheWarnings: cacheWarnings,
     folderStamp: folders == null ? null : folderGroupsStamp(folders.groups),
+    serviceStamp: serviceStamp,
   );
 }
 
@@ -360,6 +385,7 @@ Future<int> _cmdLaunch(List<String> args, void Function(String) err) async {
     profile: profile,
     resolved: resolved,
     folderStamp: r.folderStamp,
+    serviceStamp: r.serviceStamp,
   );
   if (previous != null) {
     // Issue #69: same key10, changed source — the cache was re-tied.
@@ -398,6 +424,8 @@ Future<int> _cmdLaunch(List<String> args, void Function(String) err) async {
     ),
     onFailClosed: err,
     spawnLogPath: io.Platform.environment['CUBE_SANDBOX_SPAWN_LOG'],
+    // services.yaml env overlays ride every launch shape (issue #204).
+    environment: runtime.serviceEnv.isEmpty ? null : runtime.serviceEnv,
   );
 }
 
@@ -409,6 +437,31 @@ int _cmdList(void Function(String) out) {
     out('${l.stem.padRight(10)} ${l.source.label}$desc');
   }
   return 0;
+}
+
+/// `init [--force]`: ensure `~/.cube-sandbox/AGENTS.md` (issue #204) —
+/// write-if-missing; a differing existing file is reported, never
+/// overwritten; `--force` is the only overwrite seam.
+int _cmdInit(
+  List<String> args,
+  void Function(String) out,
+  void Function(String) err,
+) {
+  final opts = _scanOpts(args, const {}, boolFlags: const {'force'});
+  if (opts.positional.isNotEmpty ||
+      opts.file != null ||
+      opts.yaml != null ||
+      opts.services.isNotEmpty ||
+      opts.folders.isNotEmpty) {
+    throw const ConfigException('init: no arguments expected (--force only)');
+  }
+  final home = io.Platform.environment['HOME'] ?? '/';
+  return initAgentsMd(
+    home: home,
+    force: opts.flags.containsKey('force'),
+    out: out,
+    err: err,
+  );
 }
 
 Future<int> _cmdShow(
@@ -497,6 +550,7 @@ Future<int> _cmdProbe(
     profile: profile,
     resolved: r.resolved,
     folderStamp: r.folderStamp,
+    serviceStamp: r.serviceStamp,
   );
   if (previous != null) {
     // Issue #69: same warning contract as launch — the probe re-tied the

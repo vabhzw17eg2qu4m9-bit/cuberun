@@ -250,13 +250,56 @@ changes the output.
 | `--use-nvm` | ro `~/.nvm` | any installed node under `~/.nvm/versions/node/<v>` works |
 | `--use-uv` | rw `~/.cache/uv`, `~/.local/share/uv` | uv cache + managed pythons (`python/`) & tools (`tools/`); config and `~/.local/bin` deliberately not granted |
 
-- Unknown service fails closed and loud, listing the catalog:
-  `--use-x: unknown service (catalog: github, gitlab, nvm, uv)` — never a
-  silent ignore.
+- Unknown service fails closed and loud, listing what exists (built-in
+  catalog, discovered `services.yaml` entries, and the AGENTS.md
+  pointer) — never a silent ignore.
 - Git under confinement: https public remotes work as-is; private
   https remotes need `--use-github`; ssh remotes deliberately fail —
   `~/.ssh` is ungrantable (below), so the failure is a loud auth error,
   never a silent grant.
+
+### Custom service profiles (`services.yaml`, issue #204)
+
+`~/.cube-sandbox/services.yaml` extends `--use-*` with data-defined
+grants — no rebuild, no code change. Schema (strict; every violation is
+an exit-2 error naming the file AND line):
+
+```yaml
+apiVersion: cube-sandbox/v1
+services:
+  <name>:                 # [a-z0-9][a-z0-9-]*
+    description: optional one-liner
+    read: [~/ro/path]     # absolute or ~/ paths, sanitized like manifests
+    write: [~/rw/path]
+    env:                  # NAME (env-name charset) -> scalar value,
+      SCRATCH_HOST: localhost   # injected into the confined command env
+```
+
+Semantics:
+
+- the file is loaded ONLY when a run names a non-built-in `--use-*` id;
+  built-in-only runs never read it (the folder-groups lazy contract);
+- the built-in catalog WINS on name collision — a `github` entry is
+  ignored; everything else unions with the built-in flags (E9: flag
+  order never changes the result; env keys merge first-occurrence-wins
+  in sorted-profile order);
+- grants ride the SAME merge stage as `--use-*`: manifest → services →
+  folder groups → env knobs, first occurrence wins;
+- E10 per direction: a profile `write:` hitting an ungrantable root is
+  rejected (exit 2, naming the file); a profile `read:` hit is honored
+  with a loud `⚠ services.yaml carries blocklisted read path …` banner;
+- selected profiles change the emitted profile ⇒ new `key10` ⇒ the next
+  launch rebuilds; the `.src` provenance stamp names the profiles and
+  their env KEYS (values never — the stamp stays secret-free);
+- the env overlay reaches the confined child on every launch shape
+  (spawn shapes via `Process.start`, the tty exec shape via setenv
+  before execvp).
+
+The generated agent manual `~/.cube-sandbox/AGENTS.md` documents the
+whole dot-dir (layout, profiles, services.yaml, folders.yaml, safety).
+`cube-sandbox init [--force]` (re)writes it — write-if-missing by
+default, `--force` is the only overwrite seam — and any verb that
+resolves the user dot-dir ensures it exists (issue #204).
 
 ## Folder groups (`--folders`)
 
@@ -326,6 +369,7 @@ may ever touch them:
 | --- | --- | --- |
 | manifest paths / `agentRoot` | `ungrantable path(s) from manifest "name": …` (exit 2, launch refused) | same (direction-agnostic) |
 | `--use-*` service catalog | impossible with the shipped catalog (regression → exit 2) | same |
+| `services.yaml` profile | `services.yaml carries ungrantable write path(s) …` (exit 2, launch refused) | honored + loud `⚠ services.yaml carries blocklisted read path …` banner, every launch |
 | `--folders` group | `--folders carries ungrantable write path(s) …` (exit 2, launch refused) | honored + loud `⚠ --folders carries blocklisted read path …` banner, every launch |
 | `CUBE_SANDBOX_EXTRA_WRITE` | hard error, launch refused (exit 2) | n/a |
 | `CUBE_SANDBOX_EXTRA_READ` | n/a | the operator escape hatch: honored, but never silent — a loud `⚠ CUBE_SANDBOX_EXTRA_READ carries blocklisted path … operator override honored, NEVER silent (E10)` banner prints on every launch |

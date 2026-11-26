@@ -8,6 +8,7 @@ import 'dart:convert' show utf8;
 import 'dart:io' as io;
 
 import 'exceptions.dart';
+import 'agents_md.dart';
 import 'harness_manifest.dart';
 import 'presets.dart';
 
@@ -126,6 +127,9 @@ final class HarnessResolver {
     if (project.existsSync()) {
       return _fromFile(project, HarnessSource.project);
     }
+    // The user dot-dir is consulted: materialize the agent manual
+    // (write-if-missing, never overwrites — issue #204 AC1).
+    ensureAgentsMd(home);
     final user = io.File('$home/.cube-sandbox/$name.yaml');
     if (user.existsSync()) {
       return _fromFile(user, HarnessSource.user);
@@ -184,6 +188,9 @@ final class HarnessResolver {
     }
 
     scan('$cwd/.cube-sandbox', HarnessSource.project);
+    // The user dot-dir is consulted: materialize the agent manual
+    // (issue #204 AC1 — `list` is the documented fresh-install verb).
+    ensureAgentsMd(home);
     scan('$home/.cube-sandbox', HarnessSource.user);
     return out;
   }

@@ -10,6 +10,7 @@ import 'exceptions.dart';
 import 'harness_manifest.dart';
 import 'paths.dart';
 import 'service_grants.dart';
+import 'service_profiles.dart';
 
 /// Filesystem probes the runtime resolver needs (injectable for UT).
 abstract class RuntimeIO {
@@ -77,6 +78,7 @@ final class HarnessRuntime {
     this.extraWritePrefix = const [],
     this.runtimeDirs = const [],
     this.services = const {},
+    this.serviceEnv = const {},
     this.warnings = const [],
   });
 
@@ -109,6 +111,11 @@ final class HarnessRuntime {
   /// The `--use-*` flag set folded into this runtime (banners/keying).
   final Set<String> services;
 
+  /// Env overlay from services.yaml profiles (issue #204): injected into
+  /// the confined command's environment at launch — never inside the
+  /// SBPL text, so env values cannot leak into the staged profile.
+  final Map<String, String> serviceEnv;
+
   /// Non-fatal operator acknowledgements (e.g. blocklisted EXTRA_READ).
   final List<String> warnings;
 
@@ -137,6 +144,7 @@ final class HarnessRuntime {
       extraWritePrefix: extraWritePrefix,
       runtimeDirs: runtimeDirs,
       services: services,
+      serviceEnv: serviceEnv,
       warnings: merge(this.warnings, warnings),
     );
   }
@@ -160,13 +168,16 @@ String runtimePrefix(String binDir) {
 /// [folderRead]/[folderWrite] are the selected folder groups' grants
 /// (issue #101, pre-sanitized + blocklist-checked by folder_groups.dart);
 /// they merge between the service grants and the env knobs.
+/// [serviceProfiles] is the parsed `~/.cube-sandbox/services.yaml`
+/// (issue #204) — loaded by the caller only when a non-built-in
+/// `--use-*` id is named; the catalog wins on collision.
 ///
 /// Throws [ConfigException] when a DECLARATIVE source (manifest paths,
-/// service catalog, EXTRA_WRITE env knob, folder-group write) touches an
-/// ungrantable root (E10). The operator escape hatches are the
-/// human-typed `CUBE_SANDBOX_EXTRA_READ` env knob and a blocklisted
-/// folder-group `read:` — both honored, never silent (loud ⚠ banner
-/// via `warnings`).
+/// service catalog, services.yaml write, EXTRA_WRITE env knob,
+/// folder-group write) touches an ungrantable root (E10). The operator
+/// escape hatches are the human-typed `CUBE_SANDBOX_EXTRA_READ` env knob
+/// and a blocklisted folder-group / services.yaml `read:` — both
+/// honored, never silent (loud ⚠ banner via `warnings`).
 HarnessRuntime resolveRuntime(
   HarnessSpec spec, {
   required Set<String> services,
@@ -176,6 +187,7 @@ HarnessRuntime resolveRuntime(
   RuntimeIO fs = const FsRuntimeIO(),
   List<String> folderRead = const [],
   List<String> folderWrite = const [],
+  ServiceProfilesDoc? serviceProfiles,
 }) {
   final cwdResolved = cwd ?? io.Directory.current.path;
   final homeResolved = home ?? io.Platform.environment['HOME'] ?? '/';
@@ -189,6 +201,7 @@ HarnessRuntime resolveRuntime(
     io: fs,
     folderRead: folderRead,
     folderWrite: folderWrite,
+    serviceProfiles: serviceProfiles,
   );
 }
 
@@ -205,6 +218,7 @@ HarnessRuntime _resolve(
   required RuntimeIO io,
   List<String> folderRead = const [],
   List<String> folderWrite = const [],
+  ServiceProfilesDoc? serviceProfiles,
 }) {
   final agentRoot = _resolveAgentRootPath(spec, home: home, env: env);
 
@@ -234,14 +248,18 @@ HarnessRuntime _resolve(
   }
 
   // --- service grants (fail-closed on unknown; catalog order for text
-  //     determinism regardless of flag order — E9).
-  final grants = resolveServiceGrants(services, home: home);
-  final grantViolations = ungrantableViolations([
-    ...grants.read,
-    ...grants.write,
-  ], home);
+  //     determinism regardless of flag order — E9; config profiles ride
+  //     the SAME stage so merge order stays manifest -> services ->
+  //     folder groups -> env knobs, issue #204).
+  final grants = resolveServiceGrants(
+    services,
+    home: home,
+    profiles: serviceProfiles,
+  );
+  final grantViolations = ungrantableViolations(grants.write, home);
   if (grantViolations.isNotEmpty) {
-    // Impossible with the shipped catalog — a bug, not a config issue.
+    // Impossible for the shipped catalog; services.yaml writes already
+    // threw in resolveServiceGrants — a bug, not a config issue.
     throw ConfigException(
       'service catalog regression: ungrantable path(s) '
       '${grantViolations.join(', ')} (E10)',
@@ -273,7 +291,8 @@ HarnessRuntime _resolve(
     extraWritePrefix: manifestWritePrefix,
     runtimeDirs: _runtimeDirsFor(spec.command, cwd: cwd, env: env, io: io),
     services: Set.of(services),
-    warnings: List.unmodifiable(knobs.warnings),
+    serviceEnv: grants.env,
+    warnings: List.unmodifiable([...grants.warnings, ...knobs.warnings]),
   );
 }
 
