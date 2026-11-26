@@ -118,8 +118,15 @@ parser is the law. Full reference: `docs/config.md` in the cube-sandbox repo.
    (rw `~/.cache/uv`, `~/.local/share/uv`) at run time:
    `cube-sandbox launch --use-github <name>` (options precede the
    profile). Flags union + dedup; unknown
-   ones fail loudly listing the catalog. To make grants permanent for a
-   profile, put the folders in `extraRead`/`extraWrite` instead.
+   ones fail loudly listing the catalog. Custom `--use-<name>` ids need
+   NO code: define them in `~/.cube-sandbox/services.yaml` (strict
+   schema, file:line errors; the built-in catalog wins on name
+   collision; blocklisted reads honored + loud, blocklisted writes
+   rejected) — dry-run with `cube-sandbox show <name> --use-<custom>`.
+   The in-box manual `~/.cube-sandbox/AGENTS.md` documents the whole
+   dot-dir; `cube-sandbox init --force` refreshes it. To make grants
+   permanent for a profile, put the folders in `extraRead`/`extraWrite`
+   instead.
 8. **Folder groups (per-run).** ONE user-level file
    `~/.cube-sandbox/folders.yaml` holds NAMED `read:`/`write:` folder
    groups (`apiVersion: cube-sandbox/v1`, group names

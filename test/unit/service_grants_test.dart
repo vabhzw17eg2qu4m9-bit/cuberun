@@ -3,6 +3,7 @@ import 'package:cube_sandbox/src/harness_manifest.dart';
 import 'package:cube_sandbox/src/runtime.dart';
 import 'package:cube_sandbox/src/sbpl.dart';
 import 'package:cube_sandbox/src/service_grants.dart';
+import 'package:cube_sandbox/src/service_profiles.dart';
 import 'package:test/test.dart';
 
 /// AC10 (UT) — service grants: EXACTLY the cataloged folders, union+dedup,
@@ -188,6 +189,100 @@ void main() {
     // OQ1/OQ2 = NO: nothing outside the two rw dirs may be granted.
     expect(text.contains('.local/bin'), isFalse);
     expect(text.contains('.config/uv'), isFalse);
+  });
+
+  // --- Issue #204: services.yaml config profiles ride the --use-* stage.
+
+  test('config profile grants apply + union with built-ins (E9 immune)', () {
+    final doc = parseServiceProfiles(
+      'apiVersion: cube-sandbox/v1\nservices:\n'
+      '  demo:\n    read: [~/shared/notes]\n    write: [~/work/scratch]\n',
+      path: 'services.yaml',
+      home: home,
+    );
+    final ab = resolveServiceGrants(
+      {'demo', 'github'},
+      home: home,
+      profiles: doc,
+    );
+    final ba = resolveServiceGrants(
+      {'github', 'demo'},
+      home: home,
+      profiles: doc,
+    );
+    for (final r in [ab, ba]) {
+      expect(r.read, [
+        '$home/.config/gh',
+        '$home/.gitconfig',
+        '$home/shared/notes',
+      ]);
+      expect(r.write, ['$home/work/scratch']);
+      expect(r.used, {'demo', 'github'});
+    }
+    expect(ab.read, ba.read, reason: 'flag order never matters (E9)');
+  });
+
+  test('built-in catalog wins on collision with a services.yaml entry', () {
+    final doc = parseServiceProfiles(
+      'apiVersion: cube-sandbox/v1\nservices:\n'
+      '  github:\n    write: [/tmp/rogue]\n',
+      path: 'services.yaml',
+      home: home,
+    );
+    final r = resolveServiceGrants({'github'}, home: home, profiles: doc);
+    expect(r.read, [
+      '$home/.config/gh',
+      '$home/.gitconfig',
+    ], reason: 'catalog grants, never the rogue entry');
+    expect(r.write, isEmpty);
+  });
+
+  test('config env overlay merges first-occurrence-wins (sorted names)', () {
+    final doc = parseServiceProfiles(
+      'apiVersion: cube-sandbox/v1\nservices:\n'
+      '  a-one:\n    env:\n      SCRATCH_HOST: from-a\n'
+      '  z-two:\n    env:\n      SCRATCH_HOST: from-z\n      ONLY_Z: yes\n',
+      path: 'services.yaml',
+      home: home,
+    );
+    final r = resolveServiceGrants(
+      {'a-one', 'z-two'},
+      home: home,
+      profiles: doc,
+    );
+    expect(r.env, {'SCRATCH_HOST': 'from-a', 'ONLY_Z': 'yes'});
+  });
+
+  test('config write hitting a blocklisted root throws (E10)', () {
+    final doc = parseServiceProfiles(
+      'apiVersion: cube-sandbox/v1\nservices:\n'
+      '  danger:\n    write: [~/.gnupg]\n',
+      path: 'services.yaml',
+      home: home,
+    );
+    expect(
+      () => resolveServiceGrants({'danger'}, home: home, profiles: doc),
+      throwsA(
+        isA<ConfigException>().having(
+          (e) => e.message,
+          'message',
+          allOf([contains('ungrantable'), contains('$home/.gnupg')]),
+        ),
+      ),
+    );
+  });
+
+  test('config read hitting a blocklisted root honors + warns (E10)', () {
+    final doc = parseServiceProfiles(
+      'apiVersion: cube-sandbox/v1\nservices:\n'
+      '  danger:\n    read: [~/.gnupg]\n',
+      path: 'services.yaml',
+      home: home,
+    );
+    final r = resolveServiceGrants({'danger'}, home: home, profiles: doc);
+    expect(r.read, ['$home/.gnupg'], reason: 'operator override honored');
+    expect(r.warnings, hasLength(1));
+    expect(r.warnings.single, contains('NEVER silent'));
   });
 
   test('catalog ids pinned (REG support)', () {

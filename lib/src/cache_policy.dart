@@ -28,26 +28,29 @@ import 'stage.dart';
 typedef SourceStamp = ({String fp, String detail});
 
 /// Fingerprints the RESOLVED SOURCE (label, path, raw manifest text) plus
-/// the selected folder groups when any ([folderStamp], issue #101).
+/// the selected folder groups ([folderStamp], issue #101) and the
+/// selected services.yaml profiles ([serviceStamp], issue #204) when any.
 /// Distinct from key10 (which fingerprints the emit): two sources that
 /// emit identically still carry different stamps, so the cache can say
 /// so. Pure and deterministic.
-SourceStamp sourceStamp(ResolvedHarness resolved, {String? folderStamp}) {
+SourceStamp sourceStamp(
+  ResolvedHarness resolved, {
+  String? folderStamp,
+  String? serviceStamp,
+}) {
   final label = resolved.source.label;
   final path = resolved.path ?? '-';
   final fp = sha256
       .convert(
         utf8.encode(
           '$label\n$path\n${resolved.sourceText ?? ''}'
-          '${folderStamp == null ? '' : '\n$folderStamp'}',
+          '${folderStamp == null ? '' : '\n$folderStamp'}'
+          '${serviceStamp == null ? '' : '\n$serviceStamp'}',
         ),
       )
       .toString();
   final detail = resolved.path == null ? label : '$label (${resolved.path})';
-  return (
-    fp: fp,
-    detail: folderStamp == null ? detail : '$detail; $folderStamp',
-  );
+  return (fp: fp, detail: [detail, ?folderStamp, ?serviceStamp].join('; '));
 }
 
 /// Sidecar holding a staged profile's provenance stamp.
@@ -91,8 +94,13 @@ SourceStamp? stageWithProvenance({
   required SbplProfile profile,
   required ResolvedHarness resolved,
   String? folderStamp,
+  String? serviceStamp,
 }) {
-  final stamp = sourceStamp(resolved, folderStamp: folderStamp);
+  final stamp = sourceStamp(
+    resolved,
+    folderStamp: folderStamp,
+    serviceStamp: serviceStamp,
+  );
   final previous = readSourceStamp(cacheDir, profile.key10);
   stageProfile(cacheDir: cacheDir, text: profile.text, key10: profile.key10);
   if (previous == null || previous.fp != stamp.fp) {

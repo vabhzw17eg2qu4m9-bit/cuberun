@@ -74,6 +74,10 @@ String spawnLogLine({
 /// [backend] names the kernel backend executable (test seam, default
 /// `sandbox-exec`); [spawnLogPath] optionally receives one JSON spawn
 /// record per launch (issue #81, `CUBE_SANDBOX_SPAWN_LOG`).
+/// [environment] overlays extra vars onto the inherited environ (issue
+/// #204, services.yaml profiles) — identical semantics on every shape:
+/// spawn shapes pass them to Process.start, the exec shape setenv(2)s
+/// them before execvp so the caller's environ carries them in.
 Future<int> launchConfined({
   required String profilePath,
   required List<String> command,
@@ -81,11 +85,15 @@ Future<int> launchConfined({
   String backend = 'sandbox-exec',
   void Function(String line)? onFailClosed,
   String? spawnLogPath,
+  Map<String, String>? environment,
 }) async {
   if (shape == LaunchShape.exec) {
     // Dart buffers stderr — the banner must be OUT before this process
     // becomes sandbox-exec, or it dies with the replaced image (#113).
     await io.stderr.flush();
+    if (environment != null && environment.isNotEmpty) {
+      _setenvAll(environment);
+    }
     _logSpawn(spawnLogPath, backend, profilePath, command, false);
     final errno = _execBackend(backend, profilePath, command);
     // execvp returned => the image was never replaced; nothing ran.
@@ -94,11 +102,14 @@ Future<int> launchConfined({
   }
   final io.Process proc;
   try {
-    proc = await io.Process.start(backend, [
-      '-f',
-      profilePath,
-      ...command,
-    ], mode: io.ProcessStartMode.inheritStdio);
+    proc = await io.Process.start(
+      backend,
+      ['-f', profilePath, ...command],
+      mode: io.ProcessStartMode.inheritStdio,
+      environment: environment == null || environment.isEmpty
+          ? null
+          : environment,
+    );
   } on io.ProcessException catch (e) {
     onFailClosed?.call(
       'kernel backend unavailable: ${e.message} (fail closed; nothing ran)',
@@ -119,6 +130,28 @@ Future<int> launchConfined({
     return mapChildExit(await proc.exitCode);
   } finally {
     await sigint.cancel();
+  }
+}
+
+/// Overlays [env] onto THIS process's environ via setenv(2) (issue #204):
+/// the exec shape's execvp then inherits the caller's environ WITH the
+/// overlay — identical child-env semantics as the spawn shapes. Keys and
+/// values are pre-validated (services.yaml parser), so setenv failures
+/// are impossible in practice; a failure is ignored (best-effort, like
+/// the spawn-log).
+void _setenvAll(Map<String, String> env) {
+  final dylib = ffi.DynamicLibrary.process();
+  final setenv = dylib
+      .lookupFunction<
+        ffi.Int32 Function(ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Int32),
+        int Function(ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, int)
+      >('setenv');
+  for (final e in env.entries) {
+    final k = e.key.toNativeUtf8();
+    final v = e.value.toNativeUtf8();
+    setenv(k, v, 1);
+    malloc.free(k);
+    malloc.free(v);
   }
 }
 

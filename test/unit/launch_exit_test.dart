@@ -161,4 +161,39 @@ void main() {
     );
     expect(code, 0, reason: 'diagnostics are best-effort');
   });
+
+  // --- issue #204: services.yaml env overlay reaches the confined child.
+
+  test('environment overlay reaches the child (wait shape)', () async {
+    final dump = '${tmp.path}/env-with.txt';
+    final code = await launchConfined(
+      profilePath: '/dev/null',
+      command: const ['ignored'],
+      backend: backend('env > "$dump"'),
+      shape: LaunchShape.wait,
+      environment: {'CUBE_TEST_PROBE': 'visible'},
+    );
+    expect(code, 0);
+    expect(
+      File(dump).readAsStringSync(),
+      contains('CUBE_TEST_PROBE=visible'),
+      reason: 'overlay is merged over the inherited environ',
+    );
+  });
+
+  test('no environment: the child environ is untouched', () async {
+    final dump = '${tmp.path}/env-without.txt';
+    final code = await launchConfined(
+      profilePath: '/dev/null',
+      command: const ['ignored'],
+      backend: backend('env > "$dump"'),
+      shape: LaunchShape.wait,
+    );
+    expect(code, 0);
+    expect(
+      File(dump).readAsStringSync(),
+      isNot(contains('CUBE_TEST_PROBE')),
+      reason: 'null overlay means inherit-only',
+    );
+  });
 }

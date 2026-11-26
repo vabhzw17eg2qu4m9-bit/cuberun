@@ -14,6 +14,7 @@ library;
 
 import 'exceptions.dart';
 import 'paths.dart';
+import 'service_profiles.dart';
 
 /// One catalog entry: a service id and the folders it needs.
 final class ServiceGrant {
@@ -68,13 +69,17 @@ const List<ServiceGrant> kServiceCatalog = <ServiceGrant>[
 List<String> get serviceCatalogIds => [for (final g in kServiceCatalog) g.id];
 
 /// Resolved folder grants for a set of `--use-*` flags: expanded, deduped,
-/// sorted.
+/// sorted. [env] carries services.yaml env overlays for the confined
+/// child; [warnings] carries E10 blocklisted-read acknowledgements (loud,
+/// never silent) from config profiles.
 final class ServiceGrantsResolved {
   /// Creates a resolved grant set.
   const ServiceGrantsResolved({
     required this.read,
     required this.write,
     required this.used,
+    this.env = const {},
+    this.warnings = const [],
   });
 
   /// Read-only folders (absolute, expanded).
@@ -85,21 +90,39 @@ final class ServiceGrantsResolved {
 
   /// The flag set that produced these grants (for banners/keying).
   final Set<String> used;
+
+  /// Env overlay from config profiles (first occurrence wins), injected
+  /// into the confined command's environment at launch.
+  final Map<String, String> env;
+
+  /// Non-fatal operator acknowledgements (config-profile blocklisted
+  /// reads) — rendered in the banner.
+  final List<String> warnings;
 }
 
-/// Resolves `--use-*` [flags] against the catalog. Unknown ids throw
-/// [ConfigException] listing the whole catalog (fail-closed, E9).
+/// Resolves `--use-*` [flags] against the catalog first, then against
+/// [profiles] (`~/.cube-sandbox/services.yaml`, issue #204) for ids the
+/// catalog does not own — the catalog always wins on name collision.
+/// Unknown ids (in NEITHER source) throw [ConfigException] listing the
+/// catalog + discovered config profiles + the AGENTS.md pointer
+/// (fail-closed, E9).
 ServiceGrantsResolved resolveServiceGrants(
   Set<String> flags, {
   required String home,
+  ServiceProfilesDoc? profiles,
 }) {
   final byId = {for (final g in kServiceCatalog) g.id: g};
+  final selected = selectServiceProfiles(profiles, flags);
   for (final flag in flags) {
-    if (!byId.containsKey(flag)) {
-      throw ConfigException(
-        '--use-$flag: unknown service (catalog: ${serviceCatalogIds.join(', ')})',
-      );
-    }
+    if (byId.containsKey(flag)) continue;
+    if (selected.any((p) => p.name == flag)) continue;
+    throw ConfigException(
+      '--use-$flag: unknown service '
+      '(catalog: ${serviceCatalogIds.join(', ')})'
+      '${_configListing(profiles)} — custom grants live in '
+      '$kServiceProfilesPath (see ~/.cube-sandbox/AGENTS.md, '
+      '"Custom service profiles")',
+    );
   }
   final read = <String>{};
   final write = <String>{};
@@ -114,11 +137,62 @@ ServiceGrantsResolved resolveServiceGrants(
       write.add(expandTilde(p, home));
     }
   }
+  // Config profiles in SORTED name order (E9): flag order must not
+  // change the union; env keys merge first-occurrence-wins.
+  final env = <String, String>{};
+  for (final p in selected) {
+    read.addAll(p.read);
+    write.addAll(p.write);
+    for (final e in p.env.entries) {
+      env.putIfAbsent(e.key, () => e.value);
+    }
+  }
+  // E10 per direction (env-knob contract, issue #204): a config WRITE
+  // hit is rejected outright; a config read hit is honored but lands in
+  // `warnings` — never silent.
+  final writeViolations = ungrantableViolations(write.toList(), home);
+  if (writeViolations.isNotEmpty) {
+    throw ConfigException(
+      '$kServiceProfilesPath carries ungrantable write path(s) '
+      '${writeViolations.join(', ')} — writes to ~/.ssh, ~/.gnupg or '
+      '~/Library/Keychains are never grantable (E10)',
+    );
+  }
+  final warnings = [
+    for (final v in ungrantableViolations(read.toList(), home))
+      '$kServiceProfilesPath carries blocklisted read path $v — '
+          'operator override honored, NEVER silent (E10)',
+  ];
   return ServiceGrantsResolved(
     read: read.toList()..sort(),
     write: write.toList()..sort(),
     used: Set.of(flags),
+    env: Map.unmodifiable(env),
+    warnings: List.unmodifiable(warnings),
   );
+}
+
+/// Names the config profiles a fail-closed error should list: the
+/// discovered names, or the explicit absence of the file (the listing
+/// must always answer "what DOES exist?").
+String _configListing(ServiceProfilesDoc? profiles) => profiles == null
+    ? '; no services.yaml found'
+    : '; services.yaml: ${profiles.services.keys.toList()..sort()}';
+
+/// Config profiles named by [flags] — non-built-in ids the doc owns, in
+/// SORTED name order (E9: flag order never changes the union). Shadowed
+/// names are skipped: the built-in catalog always wins.
+List<ServiceProfile> selectServiceProfiles(
+  ServiceProfilesDoc? doc,
+  Set<String> flags,
+) {
+  if (doc == null) return const [];
+  final catalogIds = serviceCatalogIds.toSet();
+  final names = [
+    for (final f in flags)
+      if (!catalogIds.contains(f) && doc.services.containsKey(f)) f,
+  ]..sort();
+  return [for (final n in names) doc.services[n]!];
 }
 
 /// Home-relative roots that NO grant may ever touch (E10): `~/.ssh`,

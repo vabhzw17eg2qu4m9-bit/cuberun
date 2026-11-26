@@ -3,6 +3,8 @@ import 'dart:io' as io;
 
 import 'package:cube_sandbox/src/harness_manifest.dart';
 import 'package:cube_sandbox/src/runtime.dart';
+import 'package:cube_sandbox/src/sbpl.dart';
+import 'package:cube_sandbox/src/service_profiles.dart';
 import 'package:test/test.dart';
 
 /// E5 — PATH lookup happens INSIDE the sandbox: the dir holding the
@@ -209,6 +211,83 @@ void main() {
   test(r'$TMPDIR realpath:ed (E2) — /var spelling resolved to /private', () {
     final rt = _resolveAgentRoot(env: {'TMPDIR': '/var/folders/ab/T9'});
     expect(rt.tmp, '/private/var/folders/ab/T9');
+  });
+
+  // --- Issue #204: services.yaml profiles ride the services stage.
+
+  group('service profiles (#204)', () {
+    HarnessRuntime withProfiles(ServiceProfilesDoc doc) => resolveRuntime(
+      const HarnessSpec(
+        name: 't',
+        command: ['h'],
+        agentRoot: '~/.myh',
+        extraRead: ['/w/manifest-ro'],
+      ),
+      services: {'demo'},
+      cwd: '/w',
+      home: '/Users/dev',
+      env: const {'TMPDIR': '/var/folders/ab/T9'},
+      fs: _FakeIO(),
+      serviceProfiles: doc,
+    );
+
+    test('profile grants ride the services stage (after manifest)', () {
+      final doc = parseServiceProfiles(
+        'apiVersion: cube-sandbox/v1\nservices:\n'
+        '  demo:\n    read: [/w/profile-ro]\n    write: [/w/profile-rw]\n',
+        path: '/Users/dev/.cube-sandbox/services.yaml',
+        home: '/Users/dev',
+      );
+      final rt = withProfiles(doc);
+      expect(rt.extraRead, [
+        '/w/manifest-ro',
+        '/w/profile-ro',
+      ], reason: 'merge order: manifest -> services');
+      expect(rt.extraWrite, ['/w/profile-rw']);
+      // The grant is in the emitted text under the same key discipline.
+      final text = emitProfile(rt).text;
+      expect(text, contains('(allow file-write* (subpath "/w/profile-rw")'));
+    });
+
+    test('serviceEnv surfaces on the runtime, never in the SBPL text', () {
+      final doc = parseServiceProfiles(
+        'apiVersion: cube-sandbox/v1\nservices:\n'
+        '  demo:\n    env:\n      SCRITCH_TOKEN: superslick\n',
+        path: '/Users/dev/.cube-sandbox/services.yaml',
+        home: '/Users/dev',
+      );
+      final rt = withProfiles(doc);
+      expect(rt.serviceEnv, {'SCRITCH_TOKEN': 'superslick'});
+      final text = emitProfile(rt).text;
+      expect(
+        text,
+        isNot(contains('superslick')),
+        reason: 'env values never enter the staged profile',
+      );
+      expect(text, isNot(contains('SCRITCH_TOKEN')));
+    });
+
+    test('config-profile warnings fold into runtime warnings (E10 read)', () {
+      final doc = parseServiceProfiles(
+        'apiVersion: cube-sandbox/v1\nservices:\n'
+        '  demo:\n    read: [~/.gnupg]\n',
+        path: '/Users/dev/.cube-sandbox/services.yaml',
+        home: '/Users/dev',
+      );
+      final rt = withProfiles(doc);
+      expect(rt.warnings, hasLength(1));
+      expect(rt.warnings.single, contains('NEVER silent'));
+    });
+
+    test('config-profile blocklisted write throws through resolveRuntime', () {
+      final doc = parseServiceProfiles(
+        'apiVersion: cube-sandbox/v1\nservices:\n'
+        '  demo:\n    write: [~/.ssh]\n',
+        path: '/Users/dev/.cube-sandbox/services.yaml',
+        home: '/Users/dev',
+      );
+      expect(() => withProfiles(doc), throwsA(isA<Exception>()));
+    });
   });
 
   test('resolveRuntime falls back to process cwd/home/env (CLI default)', () {

@@ -185,6 +185,17 @@ fi
 # Record the installed version for idempotency/debugging.
 printf '%s\n' "$display_version" > "$install_root/version.txt"
 
+# ── 5b. AGENTS.md manual: idempotent, never silently overwritten (issue #204)
+# The generated manual lives with the dot-dir; `init` is the same ensure
+# path every verb uses (write-if-missing; a differing user-owned file is
+# reported on stderr, never overwritten — `cube-sandbox init --force` is
+# the only overwrite seam).
+if "$install_bin/$BINARY" init >/dev/null; then
+  ok "Agent manual ensured at $install_root/AGENTS.md"
+else
+  warn "could not write AGENTS.md (run '$BINARY init' later; see message above)"
+fi
+
 ok "Installed $install_bin/$BINARY"
 
 # ── 6. Ensure the bin directory is on PATH ──────────────────────────────────
