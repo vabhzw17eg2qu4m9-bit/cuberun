@@ -191,7 +191,7 @@ printf '%s\n' "$display_version" > "$install_root/version.txt"
 # reported on stderr, never overwritten — `cube-sandbox init --force` is
 # the only overwrite seam).
 if "$install_bin/$BINARY" init >/dev/null; then
-  ok "Agent manual ensured at $install_root/AGENTS.md"
+  ok "Agent manual ensured at $HOME/.cube-sandbox/AGENTS.md"
 else
   warn "could not write AGENTS.md (run '$BINARY init' later; see message above)"
 fi

@@ -79,6 +79,13 @@ ServiceProfilesDoc parseServiceProfiles(
   required String path,
   required String home,
 }) {
+  final doc = _loadDocument(text, path);
+  _checkTopKeys(doc, path);
+  return ServiceProfilesDoc(_parseServices(doc, path: path, home: home));
+}
+
+/// Loads + shape-checks the document root: valid yaml, non-empty, a map.
+YamlMap _loadDocument(String text, String path) {
   final Object? doc;
   try {
     doc = loadYaml(text);
@@ -95,15 +102,17 @@ ServiceProfilesDoc parseServiceProfiles(
   if (doc is! YamlMap) {
     throw ConfigException('$path: must be a map, got ${doc.runtimeType}');
   }
+  return doc;
+}
 
-  // Top level allows only apiVersion + services, at ANY position. Nodes
-  // (not values) so every error carries a line number.
+/// Top level allows only apiVersion + services, at ANY position. Nodes
+/// (not values) so every error carries a line number.
+void _checkTopKeys(YamlMap doc, String path) {
   for (final entry in doc.nodes.entries) {
-    final key = entry.key;
-    if (key.value is! String ||
-        (key.value != 'apiVersion' && key.value != 'services')) {
+    final v = entry.key.value;
+    if (v is! String || (v != 'apiVersion' && v != 'services')) {
       throw ConfigException(
-        '$path:${_lineOf(key)}: ${renderValue(key.value)}: '
+        '$path:${_lineOf(entry.key)}: ${renderValue(v)}: '
         'unknown key (allowed: [apiVersion, services])',
       );
     }
@@ -115,10 +124,18 @@ ServiceProfilesDoc parseServiceProfiles(
       '"cube-sandbox/v1", got ${renderValue(apiVersion?.value)}',
     );
   }
+}
 
+/// Parses the `services:` node: absent/empty is a valid no-op; otherwise
+/// a map of name -> profile body, names enforced per entry.
+Map<String, ServiceProfile> _parseServices(
+  YamlMap doc, {
+  required String path,
+  required String home,
+}) {
   final servicesNode = doc.nodes['services'];
   if (servicesNode == null || servicesNode.value == null) {
-    return const ServiceProfilesDoc({});
+    return const {};
   }
   if (servicesNode is! YamlMap) {
     throw ConfigException(
@@ -126,20 +143,24 @@ ServiceProfilesDoc parseServiceProfiles(
       'services, got ${servicesNode.value.runtimeType}',
     );
   }
-
   final services = <String, ServiceProfile>{};
   for (final entry in servicesNode.nodes.entries) {
-    final key = entry.key;
-    final name = key.value;
-    if (name is! String || !_serviceName.hasMatch(name)) {
-      throw ConfigException(
-        '$path:${_lineOf(key)}: services.${renderValue(name)}: '
-        'service name must match [a-z0-9][a-z0-9-]*',
-      );
-    }
+    final name = _serviceNameOf(entry.key, path);
     services[name] = _parseProfile(name, entry.value, path: path, home: home);
   }
-  return ServiceProfilesDoc(services);
+  return services;
+}
+
+/// The map key must be a service name matching the charset.
+String _serviceNameOf(YamlNode key, String path) {
+  final name = key.value;
+  if (name is! String || !_serviceName.hasMatch(name)) {
+    throw ConfigException(
+      '$path:${_lineOf(key)}: services.${renderValue(name)}: '
+      'service name must match [a-z0-9][a-z0-9-]*',
+    );
+  }
+  return name;
 }
 
 /// Parses one service body: map with optional
@@ -156,6 +177,18 @@ ServiceProfile _parseProfile(
       'optional description:/read:/write:/env:, got ${body.runtimeType}',
     );
   }
+  _checkBodyKeys(name, body, path);
+  return ServiceProfile(
+    name: name,
+    description: _parseDescription(name, body, path),
+    read: _parseDir(body, 'read', name, path: path, home: home),
+    write: _parseDir(body, 'write', name, path: path, home: home),
+    env: _parseEnv(body, name, path: path),
+  );
+}
+
+/// The body map allows only description/read/write/env, at ANY position.
+void _checkBodyKeys(String name, YamlMap body, String path) {
   for (final key in body.keys) {
     if (key is! String ||
         (key != 'description' &&
@@ -168,23 +201,21 @@ ServiceProfile _parseProfile(
       );
     }
   }
-  final descNode = body.nodes['description'];
-  if (descNode != null && descNode.value != null) {
-    final d = _scalarString(descNode.value);
-    if (d == null) {
-      throw ConfigException(
-        '$path:${_lineOf(descNode)}: services.$name.description: '
-        'must be a string, got ${descNode.value.runtimeType}',
-      );
-    }
+}
+
+/// The optional description: an absent/null node is no description; a
+/// present one must be a scalar string.
+String? _parseDescription(String name, YamlMap body, String path) {
+  final node = body.nodes['description'];
+  if (node == null || node.value == null) return null;
+  final d = _scalarString(node.value);
+  if (d == null) {
+    throw ConfigException(
+      '$path:${_lineOf(node)}: services.$name.description: '
+      'must be a string, got ${node.value.runtimeType}',
+    );
   }
-  return ServiceProfile(
-    name: name,
-    description: descNode == null ? null : _scalarString(descNode.value),
-    read: _parseDir(body, 'read', name, path: path, home: home),
-    write: _parseDir(body, 'write', name, path: path, home: home),
-    env: _parseEnv(body, name, path: path),
-  );
+  return d;
 }
 
 /// Parses one direction: optional list of sanitized, tilde-expanded paths.

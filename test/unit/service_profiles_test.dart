@@ -177,6 +177,118 @@ void main() {
       );
     });
 
+    test('services: non-map names file AND line', () {
+      expect(
+        () => parseServiceProfiles(
+          'apiVersion: cube-sandbox/v1\nservices: nope\n',
+          path: 'services.yaml',
+          home: home,
+        ),
+        throwsA(
+          isA<ConfigException>().having(
+            (e) => e.message,
+            'message',
+            allOf([
+              contains('services.yaml:2:'),
+              contains('must be a map of services'),
+            ]),
+          ),
+        ),
+      );
+    });
+
+    test('missing apiVersion names file AND line', () {
+      expect(
+        () => parseServiceProfiles(
+          'services: {}\n',
+          path: 'services.yaml',
+          home: home,
+        ),
+        throwsA(
+          isA<ConfigException>().having(
+            (e) => e.message,
+            'message',
+            allOf([contains('services.yaml:1:'), contains('cube-sandbox/v1')]),
+          ),
+        ),
+      );
+    });
+
+    test('profile body non-map names file AND line', () {
+      expect(
+        () => parseServiceProfiles(
+          'apiVersion: cube-sandbox/v1\nservices:\n  demo: nope\n',
+          path: 'services.yaml',
+          home: home,
+        ),
+        throwsA(
+          isA<ConfigException>().having(
+            (e) => e.message,
+            'message',
+            allOf([
+              contains('services.yaml:3:'),
+              contains('must be a map with optional description:'),
+            ]),
+          ),
+        ),
+      );
+    });
+
+    test(
+      'non-string description names file AND line (review-pinned branch)',
+      () {
+        expect(
+          () => parseServiceProfiles(
+            'apiVersion: cube-sandbox/v1\nservices:\n'
+            '  demo:\n    description: [not, a, string]\n',
+            path: 'services.yaml',
+            home: home,
+          ),
+          throwsA(
+            isA<ConfigException>().having(
+              (e) => e.message,
+              'message',
+              allOf([
+                contains('services.yaml:4:'),
+                contains('description: must be a string'),
+              ]),
+            ),
+          ),
+        );
+      },
+    );
+
+    test('null description parses as no description', () {
+      final doc = parseServiceProfiles(
+        'apiVersion: cube-sandbox/v1\nservices:\n'
+        '  demo:\n    description:\n    write: [~/scratch]\n',
+        path: 'services.yaml',
+        home: home,
+      );
+      expect(doc.services['demo']!.description, isNull);
+    });
+
+    test('env: non-map names file AND line', () {
+      expect(
+        () => parseServiceProfiles(
+          'apiVersion: cube-sandbox/v1\nservices:\n'
+          '  demo:\n    env: nope\n',
+          path: 'services.yaml',
+          home: home,
+        ),
+        throwsA(
+          isA<ConfigException>().having(
+            (e) => e.message,
+            'message',
+            allOf([
+              contains('services.yaml:4:'),
+              contains('must be a map of NAME: value'),
+            ]),
+          ),
+        ),
+      );
+    });
+
     test('bad env name names file AND line', () {
       expect(
         () => parseServiceProfiles(

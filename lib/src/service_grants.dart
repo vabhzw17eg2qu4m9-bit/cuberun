@@ -111,10 +111,40 @@ ServiceGrantsResolved resolveServiceGrants(
   required String home,
   ServiceProfilesDoc? profiles,
 }) {
-  final byId = {for (final g in kServiceCatalog) g.id: g};
   final selected = selectServiceProfiles(profiles, flags);
+  _requireKnownIds(flags, selected, profiles);
+  final read = <String>{};
+  final write = <String>{};
+  // Iterate the CATALOG order (not the flag order) so flag order cannot
+  // change the union's construction — determinism regardless of input.
+  for (final grant in kServiceCatalog) {
+    if (!flags.contains(grant.id)) continue;
+    read.addAll([for (final p in grant.read) expandTilde(p, home)]);
+    write.addAll([for (final p in grant.write) expandTilde(p, home)]);
+  }
+  // Config profiles join the SAME stage, in sorted name order (E9).
+  final config = _expandProfiles(selected, home);
+  read.addAll(config.read);
+  write.addAll(config.write);
+  return ServiceGrantsResolved(
+    read: read.toList()..sort(),
+    write: write.toList()..sort(),
+    used: Set.of(flags),
+    env: Map.unmodifiable(config.env),
+    warnings: List.unmodifiable(config.warnings),
+  );
+}
+
+/// Fail-closed id validation: every flag must be a catalog id or a
+/// selected config profile — a typo must never degrade to "no grant".
+void _requireKnownIds(
+  Set<String> flags,
+  List<ServiceProfile> selected,
+  ServiceProfilesDoc? profiles,
+) {
+  final catalogIds = serviceCatalogIds.toSet();
   for (final flag in flags) {
-    if (byId.containsKey(flag)) continue;
+    if (catalogIds.contains(flag)) continue;
     if (selected.any((p) => p.name == flag)) continue;
     throw ConfigException(
       '--use-$flag: unknown service '
@@ -124,21 +154,23 @@ ServiceGrantsResolved resolveServiceGrants(
       '"Custom service profiles")',
     );
   }
+}
+
+/// Expands the selected config profiles: unions read/write, merges env
+/// keys first-occurrence-wins, and applies the E10 per-direction
+/// contract (env-knob verbatim): a config WRITE hit is rejected
+/// outright; a config read hit is honored but lands in `warnings` —
+/// never silent. (Built-in catalog paths are always clean, so any
+/// violation necessarily comes from services.yaml.)
+({
+  Set<String> read,
+  Set<String> write,
+  Map<String, String> env,
+  List<String> warnings,
+})
+_expandProfiles(List<ServiceProfile> selected, String home) {
   final read = <String>{};
   final write = <String>{};
-  // Iterate the CATALOG order (not the flag order) so flag order cannot
-  // change the union's construction — determinism regardless of input.
-  for (final grant in kServiceCatalog) {
-    if (!flags.contains(grant.id)) continue;
-    for (final p in grant.read) {
-      read.add(expandTilde(p, home));
-    }
-    for (final p in grant.write) {
-      write.add(expandTilde(p, home));
-    }
-  }
-  // Config profiles in SORTED name order (E9): flag order must not
-  // change the union; env keys merge first-occurrence-wins.
   final env = <String, String>{};
   for (final p in selected) {
     read.addAll(p.read);
@@ -147,9 +179,6 @@ ServiceGrantsResolved resolveServiceGrants(
       env.putIfAbsent(e.key, () => e.value);
     }
   }
-  // E10 per direction (env-knob contract, issue #204): a config WRITE
-  // hit is rejected outright; a config read hit is honored but lands in
-  // `warnings` — never silent.
   final writeViolations = ungrantableViolations(write.toList(), home);
   if (writeViolations.isNotEmpty) {
     throw ConfigException(
@@ -163,13 +192,7 @@ ServiceGrantsResolved resolveServiceGrants(
       '$kServiceProfilesPath carries blocklisted read path $v — '
           'operator override honored, NEVER silent (E10)',
   ];
-  return ServiceGrantsResolved(
-    read: read.toList()..sort(),
-    write: write.toList()..sort(),
-    used: Set.of(flags),
-    env: Map.unmodifiable(env),
-    warnings: List.unmodifiable(warnings),
-  );
+  return (read: read, write: write, env: env, warnings: warnings);
 }
 
 /// Names the config profiles a fail-closed error should list: the
